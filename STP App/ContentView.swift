@@ -59,6 +59,12 @@ struct RouteMapView: UIViewRepresentable {
         mapView.showsUserLocation = showsUserLocation
         mapView.setRegion(region, animated: false)
 
+        // Enable map interactions
+        mapView.isZoomEnabled = true
+        mapView.isScrollEnabled = true
+        mapView.isRotateEnabled = true
+        mapView.isPitchEnabled = true
+
         // Add route polyline
         let coordinates = checkpoints.map {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
