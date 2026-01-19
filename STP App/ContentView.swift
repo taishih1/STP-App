@@ -1,0 +1,3020 @@
+import SwiftUI
+import PhotosUI
+import MapKit
+import CoreLocation
+
+// MARK: - User Profile Model
+class UserProfileManager: ObservableObject {
+    static let shared = UserProfileManager()
+
+    @AppStorage("userName") var name: String = "Rider Name"
+    @AppStorage("userLocation") var location: String = "Seattle, WA"
+    @AppStorage("userBibNumber") var bibNumber: String = "#4521"
+    @AppStorage("stpCount") var stpCount: Int = 2
+    @AppStorage("rideType") var rideType: String = "Two-Day"
+    @AppStorage("emergencyContactName") var emergencyContactName: String = "Jane Doe"
+    @AppStorage("emergencyContactPhone") var emergencyContactPhone: String = "(555) 123-4567"
+    @AppStorage("notificationsEnabled") var notificationsEnabled: Bool = true
+    @AppStorage("checkpointAlerts") var checkpointAlerts: Bool = true
+    @AppStorage("weatherAlerts") var weatherAlerts: Bool = true
+    @AppStorage("friendUpdates") var friendUpdates: Bool = false
+    @AppStorage("distanceUnit") var distanceUnit: String = "Miles"
+    @AppStorage("darkMode") var darkMode: Bool = false
+
+    @Published var profileImage: UIImage? = nil
+
+    private let profileImageKey = "profileImage"
+
+    init() {
+        loadProfileImage()
+    }
+
+    func saveProfileImage(_ image: UIImage?) {
+        profileImage = image
+        if let image = image, let data = image.jpegData(compressionQuality: 0.8) {
+            UserDefaults.standard.set(data, forKey: profileImageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: profileImageKey)
+        }
+    }
+
+    func loadProfileImage() {
+        if let data = UserDefaults.standard.data(forKey: profileImageKey),
+           let image = UIImage(data: data) {
+            profileImage = image
+        }
+    }
+}
+
+// MARK: - Location Manager
+class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let locationManager = CLLocationManager()
+    private var updateTimer: Timer?
+
+    @Published var userLocation: CLLocationCoordinate2D?
+    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published var lastUpdated: Date?
+
+    override init() {
+        super.init()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        authorizationStatus = locationManager.authorizationStatus
+    }
+
+    func requestPermission() {
+        locationManager.requestWhenInUseAuthorization()
+    }
+
+    func startTracking() {
+        locationManager.startUpdatingLocation()
+        // Set up 5-minute update timer
+        updateTimer?.invalidate()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            self?.locationManager.startUpdatingLocation()
+        }
+    }
+
+    func stopTracking() {
+        locationManager.stopUpdatingLocation()
+        updateTimer?.invalidate()
+        updateTimer = nil
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { return }
+        userLocation = location.coordinate
+        lastUpdated = Date()
+        // Stop continuous updates to save battery, will resume on next timer tick
+        locationManager.stopUpdatingLocation()
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
+        if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
+            startTracking()
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("Location error: \(error.localizedDescription)")
+    }
+}
+
+// MARK: - Content View
+struct ContentView: View {
+    @State private var showingProfile = false
+    @StateObject private var userProfile = UserProfileManager.shared
+
+    var body: some View {
+        TabView {
+            HomeView(showingProfile: $showingProfile, userProfile: userProfile)
+                .tabItem {
+                    Image(systemName: "house.fill")
+                    Text("Home")
+                }
+
+            RouteView()
+                .tabItem {
+                    Image(systemName: "map.fill")
+                    Text("Route")
+                }
+
+            StatsView()
+                .tabItem {
+                    Image(systemName: "chart.bar.fill")
+                    Text("Stats")
+                }
+
+            AchievementsView()
+                .tabItem {
+                    Image(systemName: "trophy.fill")
+                    Text("Achievements")
+                }
+
+            PhotosView()
+                .tabItem {
+                    Image(systemName: "text.bubble.fill")
+                    Text("Feed")
+                }
+        }
+        .tint(.orange)
+        .sheet(isPresented: $showingProfile) {
+            ProfileView(userProfile: userProfile)
+        }
+        .environmentObject(userProfile)
+        .preferredColorScheme(userProfile.darkMode ? .dark : nil)
+    }
+}
+
+// MARK: - Home View
+struct HomeView: View {
+    @Binding var showingProfile: Bool
+    @ObservedObject var userProfile: UserProfileManager
+    @State private var showingHelp = false
+    @State private var showingFAQ = false
+    @State private var showingEmergency = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Ride Progress Card
+                    VStack(spacing: 16) {
+                        HStack {
+                            Text("Seattle to Portland")
+                                .font(.headline)
+                            Spacer()
+                            Text("Day 1")
+                                .font(.subheadline)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                                .background(.orange.opacity(0.2))
+                                .foregroundStyle(.orange)
+                                .cornerRadius(12)
+                        }
+
+                        // Progress Bar
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("68.5 mi")
+                                    .font(.title)
+                                    .fontWeight(.bold)
+                                Text("/ 206 mi")
+                                    .font(.title3)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("33%")
+                                    .font(.headline)
+                                    .foregroundStyle(.orange)
+                            }
+
+                            GeometryReader { geometry in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color(.systemGray5))
+                                        .frame(height: 12)
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(.orange)
+                                        .frame(width: geometry.size.width * 0.33, height: 12)
+                                }
+                            }
+                            .frame(height: 12)
+
+                            HStack {
+                                Image(systemName: "mappin.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text("Seattle")
+                                    .font(.caption)
+                                Spacer()
+                                Text("Portland")
+                                    .font(.caption)
+                                Image(systemName: "flag.checkered")
+                                    .foregroundStyle(.orange)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+
+                    // Current Status
+                    HStack(spacing: 12) {
+                        StatusCard(icon: "location.fill", title: "Next Stop", value: "Spanaway", subvalue: "12.3 mi away", color: .blue)
+                        StatusCard(icon: "clock.fill", title: "Ride Time", value: "4:32:15", subvalue: "Moving", color: .green)
+                    }
+                    .padding(.horizontal)
+
+                    // Weather & Conditions
+                    HStack(spacing: 12) {
+                        WeatherCard(temp: "62°", condition: "Partly Cloudy", icon: "cloud.sun.fill", wind: "8 mph NW")
+                    }
+                    .padding(.horizontal)
+
+                    // Quick Actions
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Quick Actions")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                            QuickActionButton(icon: "cross.circle.fill", title: "Emergency", color: .red) {
+                                showingEmergency = true
+                            }
+                            QuickActionButton(icon: "wrench.fill", title: "Bike Help", color: .blue) {
+                                // Bike support
+                            }
+                            QuickActionButton(icon: "car.fill", title: "SAG", color: .purple) {
+                                // SAG wagon
+                            }
+                            QuickActionButton(icon: "fork.knife", title: "Food Stop", color: .orange) {
+                                // Food stops
+                            }
+                            QuickActionButton(icon: "questionmark.circle.fill", title: "Help", color: .gray) {
+                                showingHelp = true
+                            }
+                            QuickActionButton(icon: "text.book.closed.fill", title: "FAQ", color: .teal) {
+                                showingFAQ = true
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Upcoming Checkpoints
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Upcoming Checkpoints")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        VStack(spacing: 8) {
+                            CheckpointRow(name: "Spanaway Park", mile: 80.7, amenities: ["food", "water", "restroom", "bike"], isNext: true)
+                            CheckpointRow(name: "Roy (Mini Stop)", mile: 93.2, amenities: ["water", "restroom"], isNext: false)
+                            CheckpointRow(name: "Yelm", mile: 103.5, amenities: ["food", "water", "restroom", "bike", "medical"], isNext: false)
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Your Achievements
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Achievements")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 16) {
+                                BadgeItem(icon: "figure.outdoor.cycle", title: "Started", color: .green)
+                                BadgeItem(icon: "50.circle.fill", title: "50 Miles", color: .blue)
+                                BadgeItem(icon: "sunrise.fill", title: "Early Bird", color: .orange)
+                                BadgeItem(icon: "mountain.2.fill", title: "Hill Climber", color: .purple, locked: true)
+                                BadgeItem(icon: "100.circle.fill", title: "Century", color: .red, locked: true)
+                                BadgeItem(icon: "flag.checkered", title: "Finisher", color: .yellow, locked: true)
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle("STP 2026")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: { showingProfile = true }) {
+                        Image(systemName: "person.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingHelp) {
+                HelpView()
+            }
+            .sheet(isPresented: $showingFAQ) {
+                FAQView()
+            }
+            .sheet(isPresented: $showingEmergency) {
+                EmergencyView()
+            }
+        }
+    }
+}
+
+struct StatusCard: View {
+    let icon: String
+    let title: String
+    let value: String
+    let subvalue: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(value)
+                .font(.title3)
+                .fontWeight(.bold)
+            Text(subvalue)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct WeatherCard: View {
+    let temp: String
+    let condition: String
+    let icon: String
+    let wind: String
+
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.largeTitle)
+                .foregroundStyle(.yellow)
+
+            VStack(alignment: .leading) {
+                Text(temp)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text(condition)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing) {
+                HStack {
+                    Image(systemName: "wind")
+                    Text(wind)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                Text("Good riding conditions")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct QuickActionButton: View {
+    let icon: String
+    let title: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+        }
+    }
+}
+
+struct CheckpointRow: View {
+    let name: String
+    let mile: Double
+    let amenities: [String]
+    let isNext: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(isNext ? .orange : Color(.systemGray4))
+                .frame(width: 12, height: 12)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(name)
+                        .font(.subheadline)
+                        .fontWeight(isNext ? .semibold : .regular)
+                    if isNext {
+                        Text("NEXT")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.orange)
+                            .foregroundStyle(.white)
+                            .cornerRadius(4)
+                    }
+                }
+                HStack(spacing: 8) {
+                    Text("Mile \(String(format: "%.1f", mile))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        ForEach(amenities, id: \.self) { amenity in
+                            Image(systemName: amenityIcon(amenity))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    func amenityIcon(_ amenity: String) -> String {
+        switch amenity {
+        case "food": return "fork.knife"
+        case "water": return "drop.fill"
+        case "restroom": return "toilet.fill"
+        case "bike": return "wrench.fill"
+        case "medical": return "cross.fill"
+        default: return "circle.fill"
+        }
+    }
+}
+
+// MARK: - STP Checkpoint Model
+struct STPCheckpoint: Identifiable {
+    let id = UUID()
+    let name: String
+    let mile: Double
+    let type: CheckpointType
+    let saturdayHours: String?
+    let sundayHours: String?
+    let amenities: [String]
+    let location: String
+    let notes: String
+    let latitude: Double
+    let longitude: Double
+
+    enum CheckpointType {
+        case start, restStop, miniStop, finish
+    }
+}
+
+// Official STP 2026 Checkpoints
+let stpCheckpoints: [STPCheckpoint] = [
+    STPCheckpoint(name: "Seattle - UW Stadium", mile: 0, type: .start,
+                  saturdayHours: "4:45-7:15 AM", sundayHours: nil,
+                  amenities: ["restroom", "bag drop"],
+                  location: "Parking Lot E-18, University of Washington",
+                  notes: "Packet pickup Friday 6-9 PM or Saturday morning. Arrive early for best start position.",
+                  latitude: 47.65592, longitude: -122.30085),
+    STPCheckpoint(name: "Seward Park", mile: 10, type: .miniStop,
+                  saturdayHours: "5:15-8:30 AM", sundayHours: nil,
+                  amenities: ["bike support", "restroom"],
+                  location: "Seward Park, Seattle",
+                  notes: "No host services. Mechanic and restrooms available.",
+                  latitude: 47.54888, longitude: -122.25748),
+    STPCheckpoint(name: "IKEA Renton", mile: 19, type: .restStop,
+                  saturdayHours: "5:30-9 AM", sundayHours: "Closed",
+                  amenities: ["free food", "water", "restroom", "medical", "bike support"],
+                  location: "IKEA, Renton, WA",
+                  notes: "First major rest stop. Free food and full services.",
+                  latitude: 47.44362, longitude: -122.22777),
+    STPCheckpoint(name: "Puyallup - Kalles Junior High", mile: 42, type: .miniStop,
+                  saturdayHours: "6 AM-12 PM", sundayHours: nil,
+                  amenities: ["food purchase", "water", "restroom"],
+                  location: "Kalles Junior High School, Puyallup, WA",
+                  notes: "Food and drinks available for purchase.",
+                  latitude: 47.18681, longitude: -122.28800),
+    STPCheckpoint(name: "Spanaway Middle School", mile: 55, type: .restStop,
+                  saturdayHours: "7 AM-2 PM", sundayHours: "Closed",
+                  amenities: ["free food", "water", "restroom", "medical", "bike support"],
+                  location: "Spanaway Middle School, Spanaway, WA",
+                  notes: "Full-service rest stop with free food.",
+                  latitude: 47.11504, longitude: -122.42719),
+    STPCheckpoint(name: "McKenna Elementary", mile: 71, type: .miniStop,
+                  saturdayHours: "8 AM-2 PM", sundayHours: nil,
+                  amenities: ["food purchase", "water", "restroom"],
+                  location: "McKenna Elementary School, McKenna, WA",
+                  notes: "Standard mini-stop services.",
+                  latitude: 46.93872, longitude: -122.55434),
+    STPCheckpoint(name: "Yelm City Park", mile: 74, type: .miniStop,
+                  saturdayHours: "8 AM-2 PM", sundayHours: nil,
+                  amenities: ["restroom"],
+                  location: "Yelm City Park, Yelm, WA",
+                  notes: "Porta-potties only. Limited services.",
+                  latitude: 46.94024, longitude: -122.60936),
+    STPCheckpoint(name: "Rainier Mini Stop", mile: 77, type: .miniStop,
+                  saturdayHours: "9 AM-3 PM", sundayHours: nil,
+                  amenities: ["food purchase", "water", "restroom"],
+                  location: "Rainier, WA",
+                  notes: "New for 2025! Mini stop with food and drinks for purchase.",
+                  latitude: 46.88994, longitude: -122.68747),
+    STPCheckpoint(name: "Tenino City Park", mile: 88, type: .miniStop,
+                  saturdayHours: "9 AM-4 PM", sundayHours: nil,
+                  amenities: ["food purchase", "water", "restroom"],
+                  location: "Tenino City Park, Tenino, WA",
+                  notes: "Standard mini-stop services.",
+                  latitude: 46.85553, longitude: -122.85245),
+    STPCheckpoint(name: "Centralia College (Midpoint)", mile: 101, type: .miniStop,
+                  saturdayHours: "10 AM-7 PM", sundayHours: "6-9 AM",
+                  amenities: ["food purchase", "water", "medical", "bike support", "overnight"],
+                  location: "Centralia College, Centralia, WA",
+                  notes: "Official midpoint! Medical and mechanical support. Two-day riders stay overnight here.",
+                  latitude: 46.71534, longitude: -122.96060),
+    STPCheckpoint(name: "Chehalis Recreation Park", mile: 109, type: .restStop,
+                  saturdayHours: "9:30 AM-2 PM", sundayHours: "6-10 AM (Mini-Stop)",
+                  amenities: ["free food", "water", "restroom", "medical", "bike support"],
+                  location: "Chehalis Recreation Park, Chehalis, WA",
+                  notes: "REST STOP Saturday with free food & full services. Operates as MINI-STOP Sunday with limited services.",
+                  latitude: 46.65003, longitude: -122.95552),
+    STPCheckpoint(name: "Vader", mile: 129, type: .miniStop,
+                  saturdayHours: "10 AM-5 PM", sundayHours: "6 AM-12 PM",
+                  amenities: ["free food", "water", "restroom"],
+                  location: "Vader, WA",
+                  notes: "Famous for free Vader Taters! Small town stop with local hospitality.",
+                  latitude: 46.40181, longitude: -122.96883),
+    STPCheckpoint(name: "Castle Rock High School", mile: 138, type: .miniStop,
+                  saturdayHours: nil, sundayHours: "6 AM-3 PM",
+                  amenities: ["water", "restroom", "food purchase"],
+                  location: "Castle Rock High School, Castle Rock, WA",
+                  notes: "Sunday only. Running tap water, porta-potties, limited baked goods for sale.",
+                  latitude: 46.28244, longitude: -122.91883),
+    STPCheckpoint(name: "Lexington - Riverside Park", mile: 147, type: .restStop,
+                  saturdayHours: "1-6 PM", sundayHours: "8 AM-2 PM",
+                  amenities: ["free food", "water", "restroom", "medical", "bike support"],
+                  location: "Riverside Park, Lexington, WA",
+                  notes: "Full-service rest stop. Great place to refuel for the final push.",
+                  latitude: 46.19102, longitude: -122.90493),
+    STPCheckpoint(name: "Goble Tavern", mile: 163, type: .miniStop,
+                  saturdayHours: "1-6 PM", sundayHours: "10 AM-4 PM",
+                  amenities: ["food purchase", "water"],
+                  location: "Goble Tavern, Goble, OR",
+                  notes: "Welcome to Oregon! Local tavern stop.",
+                  latitude: 46.01355, longitude: -122.87558),
+    STPCheckpoint(name: "St. Helens Elementary", mile: 177, type: .restStop,
+                  saturdayHours: "2-6 PM", sundayHours: "9 AM-5 PM",
+                  amenities: ["free food", "water", "restroom", "medical", "bike support"],
+                  location: "St. Helens Elementary School, St. Helens, OR",
+                  notes: "Last major rest stop before Portland. Full services available.",
+                  latitude: 45.85506, longitude: -122.83817),
+    STPCheckpoint(name: "Scappoose", mile: 188, type: .miniStop,
+                  saturdayHours: "2-6 PM", sundayHours: "9 AM-5 PM",
+                  amenities: ["water", "food purchase"],
+                  location: "NW Boat Basin Rd, Scappoose, OR",
+                  notes: "Free tap water hauled in. Other items may be for sale. Almost there!",
+                  latitude: 45.68283, longitude: -122.87401),
+    STPCheckpoint(name: "Portland - Holladay Park", mile: 206, type: .finish,
+                  saturdayHours: "4-10 PM", sundayHours: "10 AM-6 PM",
+                  amenities: ["finisher meal", "merchandise", "bag pickup"],
+                  location: "Holladay Park, Portland, OR",
+                  notes: "Congratulations, you made it! Finisher meal, merchandise pickup, and luggage retrieval available.",
+                  latitude: 45.53076, longitude: -122.65358)
+]
+
+// MARK: - Route View
+struct RouteView: View {
+    @State private var selectedFilter: RouteFilter = .all
+    @StateObject private var locationManager = LocationManager()
+    @State private var mapRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 46.5, longitude: -122.6),
+        span: MKCoordinateSpan(latitudeDelta: 3.0, longitudeDelta: 1.5)
+    )
+    @State private var selectedCheckpoint: STPCheckpoint?
+
+    enum RouteFilter: String, CaseIterable {
+        case all = "All Stops"
+        case restStops = "Rest Stops"
+        case miniStops = "Mini Stops"
+    }
+
+    var filteredCheckpoints: [STPCheckpoint] {
+        switch selectedFilter {
+        case .all:
+            return stpCheckpoints
+        case .restStops:
+            return stpCheckpoints.filter { $0.type == .restStop || $0.type == .start || $0.type == .finish }
+        case .miniStops:
+            return stpCheckpoints.filter { $0.type == .miniStop }
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Interactive Map
+                    ZStack(alignment: .topTrailing) {
+                        Map(coordinateRegion: $mapRegion, showsUserLocation: true, annotationItems: stpCheckpoints) { checkpoint in
+                            MapAnnotation(coordinate: CLLocationCoordinate2D(latitude: checkpoint.latitude, longitude: checkpoint.longitude)) {
+                                CheckpointMapMarker(checkpoint: checkpoint) {
+                                    selectedCheckpoint = checkpoint
+                                }
+                            }
+                        }
+                        .frame(height: 280)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                        // Location status indicator
+                        VStack(alignment: .trailing, spacing: 4) {
+                            if locationManager.authorizationStatus == .notDetermined {
+                                Button(action: { locationManager.requestPermission() }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "location.fill")
+                                        Text("Enable GPS")
+                                    }
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(Capsule())
+                                }
+                            } else if locationManager.userLocation != nil {
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(.green)
+                                        .frame(width: 8, height: 8)
+                                    Text("GPS Active")
+                                        .font(.caption2)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                            }
+
+                            // Center on user location button
+                            if locationManager.userLocation != nil {
+                                Button(action: {
+                                    if let location = locationManager.userLocation {
+                                        withAnimation {
+                                            mapRegion.center = location
+                                            mapRegion.span = MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+                                        }
+                                    }
+                                }) {
+                                    Image(systemName: "location.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.blue)
+                                        .padding(8)
+                                        .background(.ultraThinMaterial)
+                                        .clipShape(Circle())
+                                }
+                            }
+
+                            // Reset to full route button
+                            Button(action: {
+                                withAnimation {
+                                    mapRegion = MKCoordinateRegion(
+                                        center: CLLocationCoordinate2D(latitude: 46.5, longitude: -122.6),
+                                        span: MKCoordinateSpan(latitudeDelta: 3.0, longitudeDelta: 1.5)
+                                    )
+                                }
+                            }) {
+                                Image(systemName: "map")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.orange)
+                                    .padding(8)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(Circle())
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .padding(.horizontal)
+                    .onAppear {
+                        if locationManager.authorizationStatus == .authorizedWhenInUse ||
+                           locationManager.authorizationStatus == .authorizedAlways {
+                            locationManager.startTracking()
+                        }
+                    }
+                    .sheet(item: $selectedCheckpoint) { checkpoint in
+                        CheckpointDetailView(checkpoint: checkpoint)
+                            .presentationDetents([.medium, .large])
+                    }
+
+                    // Route Stats
+                    HStack(spacing: 12) {
+                        RouteStatCard(title: "Total Distance", value: "206 mi", icon: "arrow.left.and.right")
+                        RouteStatCard(title: "Elevation Gain", value: "4,800 ft", icon: "mountain.2.fill")
+                    }
+                    .padding(.horizontal)
+
+                    // Stop Type Legend
+                    HStack(spacing: 16) {
+                        LegendItem(color: .green, label: "Rest Stop (Free Food)")
+                        LegendItem(color: .blue, label: "Mini Stop (Food for Purchase)")
+                    }
+                    .font(.caption)
+                    .padding(.horizontal)
+
+                    // Filter
+                    Picker("Filter", selection: $selectedFilter) {
+                        ForEach(RouteFilter.allCases, id: \.self) { filter in
+                            Text(filter.rawValue).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+
+                    // All Checkpoints
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Checkpoints")
+                                .font(.headline)
+                            Spacer()
+                            Text("\(filteredCheckpoints.count) stops")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal)
+
+                        VStack(spacing: 0) {
+                            ForEach(Array(filteredCheckpoints.enumerated()), id: \.element.id) { index, checkpoint in
+                                STPCheckpointRow(
+                                    checkpoint: checkpoint,
+                                    isLast: index == filteredCheckpoints.count - 1
+                                )
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle("Route")
+        }
+    }
+}
+
+// MARK: - Checkpoint Map Marker
+struct CheckpointMapMarker: View {
+    let checkpoint: STPCheckpoint
+    let onTap: () -> Void
+
+    var markerColor: Color {
+        switch checkpoint.type {
+        case .start: return .orange
+        case .restStop: return .green
+        case .miniStop: return .blue
+        case .finish: return .orange
+        }
+    }
+
+    var markerIcon: String {
+        switch checkpoint.type {
+        case .start: return "flag.fill"
+        case .restStop: return "fork.knife"
+        case .miniStop: return "cup.and.saucer.fill"
+        case .finish: return "flag.checkered"
+        }
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle()
+                        .fill(markerColor)
+                        .frame(width: 32, height: 32)
+                        .shadow(color: markerColor.opacity(0.4), radius: 4, y: 2)
+                    Image(systemName: markerIcon)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white)
+                }
+                // Pointer triangle
+                Triangle()
+                    .fill(markerColor)
+                    .frame(width: 12, height: 8)
+                    .offset(y: -2)
+            }
+        }
+    }
+}
+
+struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+struct LegendItem: View {
+    let color: Color
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(label)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct STPCheckpointRow: View {
+    let checkpoint: STPCheckpoint
+    var isLast: Bool = false
+    @State private var showingDetail = false
+
+    var typeColor: Color {
+        switch checkpoint.type {
+        case .start: return .orange
+        case .restStop: return .green
+        case .miniStop: return .blue
+        case .finish: return .orange
+        }
+    }
+
+    var typeIcon: String {
+        switch checkpoint.type {
+        case .start: return "flag.fill"
+        case .restStop: return "fork.knife"
+        case .miniStop: return "cup.and.saucer.fill"
+        case .finish: return "flag.checkered"
+        }
+    }
+
+    var body: some View {
+        Button(action: { showingDetail = true }) {
+            HStack(spacing: 12) {
+                // Timeline indicator
+                VStack(spacing: 0) {
+                    ZStack {
+                        Circle()
+                            .fill(typeColor)
+                            .frame(width: 28, height: 28)
+                        Image(systemName: typeIcon)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    if !isLast {
+                        Rectangle()
+                            .fill(Color(.systemGray4))
+                            .frame(width: 2, height: 50)
+                    }
+                }
+
+                // Content
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(checkpoint.name)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text("Mile \(Int(checkpoint.mile))")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(typeColor.opacity(0.2))
+                            .foregroundStyle(typeColor)
+                            .cornerRadius(8)
+                    }
+
+                    // Hours preview
+                    if let satHours = checkpoint.saturdayHours {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.caption2)
+                            Text("Sat: \(satHours)")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+
+                    // Tap for more hint
+                    Text("Tap for details")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showingDetail) {
+            CheckpointDetailView(checkpoint: checkpoint)
+        }
+    }
+}
+
+// MARK: - Checkpoint Detail View
+struct CheckpointDetailView: View {
+    @Environment(\.dismiss) var dismiss
+    let checkpoint: STPCheckpoint
+
+    var typeColor: Color {
+        switch checkpoint.type {
+        case .start: return .orange
+        case .restStop: return .green
+        case .miniStop: return .blue
+        case .finish: return .orange
+        }
+    }
+
+    var typeLabel: String {
+        switch checkpoint.type {
+        case .start: return "Start Line"
+        case .restStop: return "Rest Stop"
+        case .miniStop: return "Mini Stop"
+        case .finish: return "Finish Line"
+        }
+    }
+
+    var typeDescription: String {
+        switch checkpoint.type {
+        case .start: return "The official start of STP at University of Washington"
+        case .restStop: return "Full-service stop with free food, medical staff, and bike mechanics"
+        case .miniStop: return "Quick stop with food and drinks available for purchase"
+        case .finish: return "Congratulations! You made it to Portland!"
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header
+                    VStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .fill(typeColor)
+                                .frame(width: 80, height: 80)
+                            Image(systemName: checkpointIcon)
+                                .font(.system(size: 32, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+
+                        VStack(spacing: 8) {
+                            Text(checkpoint.name)
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .multilineTextAlignment(.center)
+
+                            HStack(spacing: 12) {
+                                Label("Mile \(Int(checkpoint.mile))", systemImage: "mappin.circle.fill")
+                                Text("•")
+                                Text(typeLabel)
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        }
+
+                        Text(typeDescription)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    .padding(.top)
+
+                    // Location Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Location", systemImage: "mappin.and.ellipse")
+                            .font(.headline)
+
+                        HStack(spacing: 12) {
+                            Image(systemName: "building.2.fill")
+                                .font(.title2)
+                                .foregroundStyle(.blue)
+                                .frame(width: 40)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(checkpoint.location)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+
+                                Button(action: {
+                                    // Open in Maps
+                                    let query = checkpoint.location.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                                    if let url = URL(string: "maps://?q=\(query)") {
+                                        UIApplication.shared.open(url)
+                                    }
+                                }) {
+                                    Label("Open in Maps", systemImage: "arrow.up.right.square")
+                                        .font(.caption)
+                                        .foregroundStyle(.blue)
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+
+                    // Notes Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Notes", systemImage: "note.text")
+                            .font(.headline)
+
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "info.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.orange)
+                            Text(checkpoint.notes)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+
+                    // Hours Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Hours of Operation", systemImage: "clock.fill")
+                            .font(.headline)
+
+                        VStack(spacing: 8) {
+                            if let satHours = checkpoint.saturdayHours {
+                                HoursRow(day: "Saturday", hours: satHours, isOpen: satHours != "Closed")
+                            }
+                            if let sunHours = checkpoint.sundayHours {
+                                HoursRow(day: "Sunday", hours: sunHours, isOpen: sunHours != "Closed" && sunHours != "Limited")
+                            } else if checkpoint.saturdayHours != nil {
+                                HoursRow(day: "Sunday", hours: "Closed", isOpen: false)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+
+                    // Amenities Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Available Services", systemImage: "checkmark.circle.fill")
+                            .font(.headline)
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                            ForEach(checkpoint.amenities, id: \.self) { amenity in
+                                AmenityCard(amenity: amenity)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // What to Expect Section
+                    if checkpoint.type == .restStop || checkpoint.type == .start || checkpoint.type == .finish {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("What to Expect", systemImage: "info.circle.fill")
+                                .font(.headline)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                if checkpoint.type == .restStop {
+                                    ExpectationRow(icon: "fork.knife", text: "Free food and sports drinks")
+                                    ExpectationRow(icon: "toilet", text: "Honey Bucket restrooms on site")
+                                    ExpectationRow(icon: "cross.fill", text: "Full medical staff available")
+                                    ExpectationRow(icon: "wrench.fill", text: "Bike mechanics for repairs")
+                                } else if checkpoint.type == .start {
+                                    ExpectationRow(icon: "ticket", text: "Packet pickup available")
+                                    ExpectationRow(icon: "bag.fill", text: "Bag drop-off service")
+                                    ExpectationRow(icon: "figure.wave", text: "Arrive early for best start position")
+                                } else if checkpoint.type == .finish {
+                                    ExpectationRow(icon: "trophy.fill", text: "Finisher meal included")
+                                    ExpectationRow(icon: "tshirt", text: "Merchandise pickup")
+                                    ExpectationRow(icon: "bag.fill", text: "Luggage retrieval")
+                                    ExpectationRow(icon: "bus.fill", text: "Bus and bike truck loading")
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Distance Info
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Distance", systemImage: "arrow.left.and.right")
+                            .font(.headline)
+
+                        HStack(spacing: 16) {
+                            DistanceCard(
+                                label: "From Start",
+                                value: "\(Int(checkpoint.mile)) mi",
+                                icon: "flag.fill"
+                            )
+                            DistanceCard(
+                                label: "To Finish",
+                                value: "\(206 - Int(checkpoint.mile)) mi",
+                                icon: "flag.checkered"
+                            )
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    Spacer(minLength: 40)
+                }
+            }
+            .navigationTitle("Stop Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    var checkpointIcon: String {
+        switch checkpoint.type {
+        case .start: return "flag.fill"
+        case .restStop: return "fork.knife"
+        case .miniStop: return "cup.and.saucer.fill"
+        case .finish: return "flag.checkered"
+        }
+    }
+}
+
+struct HoursRow: View {
+    let day: String
+    let hours: String
+    let isOpen: Bool
+
+    var body: some View {
+        HStack {
+            Text(day)
+                .fontWeight(.medium)
+            Spacer()
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(isOpen ? .green : .red)
+                    .frame(width: 8, height: 8)
+                Text(hours)
+                    .foregroundStyle(isOpen ? .primary : .secondary)
+            }
+        }
+    }
+}
+
+struct AmenityCard: View {
+    let amenity: String
+
+    var icon: String {
+        switch amenity.lowercased() {
+        case "free food": return "fork.knife"
+        case "food purchase": return "dollarsign.circle"
+        case "water": return "drop.fill"
+        case "restroom": return "toilet"
+        case "medical": return "cross.fill"
+        case "bike support": return "wrench.fill"
+        case "overnight": return "moon.fill"
+        case "bag drop": return "bag.fill"
+        case "finisher meal": return "trophy.fill"
+        case "merchandise": return "tshirt"
+        case "bag pickup": return "bag.fill"
+        default: return "checkmark.circle.fill"
+        }
+    }
+
+    var color: Color {
+        switch amenity.lowercased() {
+        case "free food": return .green
+        case "food purchase": return .blue
+        case "water": return .cyan
+        case "restroom": return .purple
+        case "medical": return .red
+        case "bike support": return .orange
+        case "overnight": return .indigo
+        case "bag drop", "bag pickup": return .brown
+        case "finisher meal": return .yellow
+        case "merchandise": return .pink
+        default: return .gray
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+                .frame(width: 24)
+            Text(amenity.capitalized)
+                .font(.subheadline)
+            Spacer()
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+    }
+}
+
+struct ExpectationRow: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.orange)
+                .frame(width: 20)
+            Text(text)
+                .font(.subheadline)
+            Spacer()
+        }
+    }
+}
+
+struct DistanceCard: View {
+    let label: String
+    let value: String
+    let icon: String
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(.orange)
+            Text(value)
+                .font(.title3)
+                .fontWeight(.bold)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct AmenityBadge: View {
+    let amenity: String
+
+    var icon: String {
+        switch amenity.lowercased() {
+        case "free food": return "fork.knife"
+        case "food purchase": return "dollarsign.circle"
+        case "water": return "drop.fill"
+        case "restroom": return "toilet"
+        case "medical": return "cross.fill"
+        case "bike support": return "wrench.fill"
+        case "overnight": return "moon.fill"
+        case "bag drop": return "bag.fill"
+        case "finisher meal": return "trophy.fill"
+        case "merchandise": return "tshirt.fill"
+        case "bag pickup": return "bag.fill"
+        default: return "circle.fill"
+        }
+    }
+
+    var body: some View {
+        Image(systemName: icon)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+    }
+}
+
+struct RouteStatCard: View {
+    let title: String
+    let value: String
+    let icon: String
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(.orange)
+            Text(value)
+                .font(.title3)
+                .fontWeight(.bold)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Stats View
+struct StatsView: View {
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Main Stats Cards
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                        StatCard(title: "Distance", value: "68.5", unit: "miles", icon: "figure.outdoor.cycle", color: .orange)
+                        StatCard(title: "Avg Speed", value: "15.2", unit: "mph", icon: "speedometer", color: .blue)
+                        StatCard(title: "Elevation", value: "1,847", unit: "ft", icon: "mountain.2.fill", color: .green)
+                        StatCard(title: "Calories", value: "2,450", unit: "kcal", icon: "flame.fill", color: .red)
+                    }
+                    .padding(.horizontal)
+
+                    // Time Stats
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Time")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        HStack(spacing: 12) {
+                            TimeStatCard(title: "Moving Time", value: "4:32:15", icon: "play.circle.fill", color: .green)
+                            TimeStatCard(title: "Stopped", value: "0:48:30", icon: "pause.circle.fill", color: .orange)
+                            TimeStatCard(title: "Total", value: "5:20:45", icon: "clock.fill", color: .blue)
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Speed Chart
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Speed Over Time")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color(.systemGray6))
+                                .frame(height: 150)
+
+                            // Simple chart visualization
+                            HStack(alignment: .bottom, spacing: 4) {
+                                ForEach(0..<20, id: \.self) { i in
+                                    let heights: [CGFloat] = [40, 55, 60, 45, 70, 85, 75, 65, 80, 90, 85, 70, 75, 80, 65, 55, 60, 70, 75, 80]
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(.orange.opacity(0.7))
+                                        .frame(width: 12, height: heights[i])
+                                }
+                            }
+                            .padding()
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Segment Times
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Segment Times")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        VStack(spacing: 8) {
+                            SegmentRow(from: "Seattle", to: "Renton", distance: "18.3 mi", time: "1:12:00", avgSpeed: "15.3 mph")
+                            SegmentRow(from: "Renton", to: "Puyallup", distance: "31.2 mi", time: "2:05:30", avgSpeed: "14.9 mph")
+                            SegmentRow(from: "Puyallup", to: "Current", distance: "19.0 mi", time: "1:14:45", avgSpeed: "15.4 mph")
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Personal Records
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Personal Records")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        VStack(spacing: 8) {
+                            PRRow(title: "Fastest Mile", value: "3:24", icon: "bolt.fill", isNew: true)
+                            PRRow(title: "Longest Ride", value: "68.5 mi", icon: "arrow.left.and.right", isNew: true)
+                            PRRow(title: "Most Elevation", value: "1,847 ft", icon: "mountain.2.fill", isNew: false)
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle("Stats")
+        }
+    }
+}
+
+struct StatCard: View {
+    let title: String
+    let value: String
+    let unit: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(value)
+                    .font(.title)
+                    .fontWeight(.bold)
+                Text(unit)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct TimeStatCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.bold)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct SegmentRow: View {
+    let from: String
+    let to: String
+    let distance: String
+    let time: String
+    let avgSpeed: String
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(from) → \(to)")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(distance)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(time)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(avgSpeed)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+struct PRRow: View {
+    let title: String
+    let value: String
+    let icon: String
+    let isNew: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.orange)
+                .frame(width: 24)
+
+            Text(title)
+                .font(.subheadline)
+
+            Spacer()
+
+            if isNew {
+                Text("NEW")
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.green)
+                    .foregroundStyle(.white)
+                    .cornerRadius(4)
+            }
+
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.bold)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Achievements View
+struct AchievementsView: View {
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Progress Summary
+                    VStack(spacing: 16) {
+                        HStack {
+                            Text("Your Progress")
+                                .font(.headline)
+                            Spacer()
+                            Text("6 of 13 Badges")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color(.systemGray5))
+                                    .frame(height: 12)
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(.orange)
+                                    .frame(width: geometry.size.width * 0.46, height: 12)
+                            }
+                        }
+                        .frame(height: 12)
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+
+                    // STP Year Badges
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("STP Finisher")
+                                .font(.headline)
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 16) {
+                                YearBadge(year: "2023", subtitle: "STP 2023", detail: "206 Miles", imageName: "stp_2023", earned: true)
+                                YearBadge(year: "2024", subtitle: "STP 2024", detail: "206 Miles", imageName: "stp_2024", earned: true)
+                                YearBadge(year: "2025", subtitle: "STP 2025", detail: "206 Miles", imageName: "stp_2025", earned: true)
+                                YearBadge(year: "2026", subtitle: "STP 2026", detail: "206 Miles", imageName: "stp_2026", earned: true)
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+
+                    // Earned Badges
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Earned")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                            AchievementBadge(icon: "figure.outdoor.cycle", title: "First Pedal", subtitle: "Start the ride", color: .green, earned: true)
+                            AchievementBadge(icon: "50.circle.fill", title: "Halfway", subtitle: "Reach mile 103", color: .blue, earned: true)
+                            AchievementBadge(icon: "flag.checkered", title: "Finisher", subtitle: "Complete 206 miles", color: .yellow, earned: true)
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Locked Badges
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Locked")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                            AchievementBadge(icon: "star.fill", title: "One Day", subtitle: "Finish in one day", color: .pink, earned: false)
+                            AchievementBadge(icon: "repeat", title: "Veteran", subtitle: "Complete 2+ STPs", color: .brown, earned: false)
+                            AchievementBadge(icon: "sunrise.fill", title: "Early Bird", subtitle: "Finish before noon", color: .orange, earned: false)
+                            AchievementBadge(icon: "moon.stars.fill", title: "Night Owl", subtitle: "Ride after sunset", color: .indigo, earned: false)
+                            AchievementBadge(icon: "figure.walk", title: "Rest Stop", subtitle: "Check in at all stops", color: .mint, earned: false)
+                            AchievementBadge(icon: "hand.thumbsup.fill", title: "Supporter", subtitle: "Cheer 10 riders", color: .cyan, earned: false)
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Milestones
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Milestones")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        VStack(spacing: 8) {
+                            MilestoneRow(title: "First Rest Stop", location: "Renton - Mile 18.3", completed: true)
+                            MilestoneRow(title: "Quarter Way", location: "Mile 51.5", completed: true)
+                            MilestoneRow(title: "Halfway Point", location: "Centralia - Mile 103", completed: false, isNext: true)
+                            MilestoneRow(title: "Three Quarters", location: "Mile 154.5", completed: false)
+                            MilestoneRow(title: "Finish Line", location: "Portland - Mile 206", completed: false)
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle("Achievements")
+        }
+    }
+}
+
+struct AchievementBadge: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let color: Color
+    let earned: Bool
+    var progress: Double? = nil
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(earned ? color.opacity(0.2) : Color(.systemGray5))
+                    .frame(width: 70, height: 70)
+
+                if let progress = progress, !earned {
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(color, lineWidth: 4)
+                        .frame(width: 70, height: 70)
+                        .rotationEffect(.degrees(-90))
+                }
+
+                Image(systemName: earned ? icon : (progress != nil ? icon : "lock.fill"))
+                    .font(.title2)
+                    .foregroundStyle(earned ? color : (progress != nil ? color.opacity(0.6) : .gray))
+            }
+
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(earned ? .primary : .secondary)
+
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct YearBadge: View {
+    let year: String
+    let subtitle: String
+    let detail: String
+    let imageName: String
+    let earned: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                if earned {
+                    Image(imageName)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 100, height: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(.systemGray4), Color(.systemGray5)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 100, height: 100)
+
+                    VStack(spacing: 4) {
+                        Image(systemName: "lock.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                        Text(year)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(earned ? .orange : Color(.systemGray3), lineWidth: 3)
+            )
+            .shadow(color: earned ? .orange.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
+
+            Text(subtitle)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(earned ? .primary : .secondary)
+
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(width: 110)
+    }
+}
+
+struct MilestoneRow: View {
+    let title: String
+    let location: String
+    let completed: Bool
+    var isNext: Bool = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(completed ? .green : (isNext ? .orange : Color(.systemGray4)))
+                    .frame(width: 32, height: 32)
+
+                if completed {
+                    Image(systemName: "checkmark")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                } else if isNext {
+                    Image(systemName: "arrow.right")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(isNext ? .semibold : .regular)
+                    if isNext {
+                        Text("NEXT")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.orange)
+                            .foregroundStyle(.white)
+                            .cornerRadius(4)
+                    }
+                }
+                Text(location)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if completed {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Photos View
+struct PhotosView: View {
+    @State private var selectedStop = "All Stops"
+    @State private var showingCamera = false
+    let stops = ["All Stops", "Seattle", "Renton", "Puyallup", "Spanaway", "Yelm", "Centralia"]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Post Photo Button
+                    Button(action: { showingCamera = true }) {
+                        HStack {
+                            Image(systemName: "camera.fill")
+                            Text("Share a photo from the ride")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                        .padding()
+                        .background(.orange)
+                        .foregroundStyle(.white)
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+
+                    // Rest Stop Filter
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(stops, id: \.self) { stop in
+                                StopFilterChip(title: stop, isSelected: selectedStop == stop) {
+                                    selectedStop = stop
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Photo Feed
+                    VStack(spacing: 20) {
+                        PhotoPost(
+                            username: "Sarah M.",
+                            bib: "#4522",
+                            location: "Puyallup Rest Stop",
+                            timeAgo: "12 min ago",
+                            caption: "Made it to Puyallup! 50 miles down, feeling strong 💪",
+                            likes: 24,
+                            comments: 5,
+                            colorIndex: 0
+                        )
+
+                        PhotoPost(
+                            username: "Mike C.",
+                            bib: "#4523",
+                            location: "On the road",
+                            timeAgo: "28 min ago",
+                            caption: "Beautiful views on the way to Spanaway!",
+                            likes: 18,
+                            comments: 3,
+                            colorIndex: 1
+                        )
+
+                        PhotoPost(
+                            username: "Team Cascade",
+                            bib: "Group",
+                            location: "Renton Rest Stop",
+                            timeAgo: "1 hr ago",
+                            caption: "Team photo at Renton! 🚴‍♂️🚴‍♀️🚴‍♂️",
+                            likes: 45,
+                            comments: 12,
+                            isGroupPhoto: true,
+                            colorIndex: 2
+                        )
+
+                        PhotoPost(
+                            username: "Alex T.",
+                            bib: "#3892",
+                            location: "Seattle Start",
+                            timeAgo: "3 hrs ago",
+                            caption: "And we're off! STP 2025 here we go! 🎉",
+                            likes: 89,
+                            comments: 21,
+                            colorIndex: 3
+                        )
+
+                        PhotoPost(
+                            username: "Jordan L.",
+                            bib: "#5102",
+                            location: "Puyallup Rest Stop",
+                            timeAgo: "18 min ago",
+                            caption: "Refueling with some amazing banana bread from the volunteers!",
+                            likes: 32,
+                            comments: 8,
+                            colorIndex: 4
+                        )
+
+                        PhotoPost(
+                            username: "Emma W.",
+                            bib: "#4520",
+                            location: "On the road",
+                            timeAgo: "45 min ago",
+                            caption: "That hill was no joke but we made it!",
+                            likes: 56,
+                            comments: 14,
+                            colorIndex: 5
+                        )
+                    }
+                    .padding(.horizontal)
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle("Feed")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: { showingCamera = true }) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingCamera) {
+                NewPostView()
+            }
+        }
+    }
+}
+
+struct StopFilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(isSelected ? .semibold : .regular)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(isSelected ? .orange : Color(.systemGray6))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .cornerRadius(20)
+        }
+    }
+}
+
+struct PhotoPost: View {
+    let username: String
+    let bib: String
+    let location: String
+    let timeAgo: String
+    let caption: String
+    let likes: Int
+    let comments: Int
+    var isGroupPhoto: Bool = false
+    let colorIndex: Int
+
+    let colors: [Color] = [.orange, .blue, .green, .purple, .pink, .teal]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack(spacing: 12) {
+                Image(systemName: isGroupPhoto ? "person.3.fill" : "person.circle.fill")
+                    .resizable()
+                    .frame(width: 40, height: 40)
+                    .foregroundStyle(isGroupPhoto ? .orange : .gray)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(username)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text(bib)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 4) {
+                        Image(systemName: "mappin")
+                            .font(.caption2)
+                        Text(location)
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text(timeAgo)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Photo Placeholder
+            RoundedRectangle(cornerRadius: 12)
+                .fill(colors[colorIndex % colors.count].opacity(0.2))
+                .frame(height: 250)
+                .overlay(
+                    VStack(spacing: 8) {
+                        Image(systemName: "photo.fill")
+                            .font(.largeTitle)
+                        Text("Photo")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(colors[colorIndex % colors.count])
+                )
+
+            // Caption
+            Text(caption)
+                .font(.subheadline)
+
+            // Actions
+            HStack(spacing: 24) {
+                Button(action: {}) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "heart")
+                        Text("\(likes)")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+
+                Button(action: {}) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bubble.right")
+                        Text("\(comments)")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+
+                Button(action: {}) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "hand.thumbsup")
+                        Text("Cheer")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+                }
+
+                Spacer()
+
+                Button(action: {}) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(16)
+    }
+}
+
+struct NewPostView: View {
+    @Environment(\.dismiss) var dismiss
+    @State private var caption = ""
+    @State private var selectedLocation = "Current Location"
+    let locations = ["Current Location", "Seattle Start", "Renton", "Puyallup", "Spanaway", "On the Road"]
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                // Photo Area
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color(.systemGray5))
+                        .frame(height: 300)
+
+                    VStack(spacing: 12) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 50))
+                            .foregroundStyle(.orange)
+                        Text("Tap to take a photo")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal)
+
+                // Location Picker
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Location")
+                        .font(.headline)
+                        .padding(.horizontal)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(locations, id: \.self) { location in
+                                StopFilterChip(title: location, isSelected: selectedLocation == location) {
+                                    selectedLocation = location
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+
+                // Caption
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Caption")
+                        .font(.headline)
+                        .padding(.horizontal)
+
+                    TextField("Share your ride experience...", text: $caption, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                }
+
+                Spacer()
+
+                // Post Button
+                Button(action: { dismiss() }) {
+                    Text("Post to Feed")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(.orange)
+                        .foregroundStyle(.white)
+                        .cornerRadius(12)
+                }
+                .padding(.horizontal)
+                .padding(.bottom)
+            }
+            .padding(.top)
+            .navigationTitle("New Post")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Profile View
+struct ProfileView: View {
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var userProfile: UserProfileManager
+    @State private var showingEditProfile = false
+    @State private var showingNotifications = false
+    @State private var showingSettings = false
+    @State private var showingShareSheet = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Profile Header
+                    VStack(spacing: 12) {
+                        ZStack(alignment: .bottomTrailing) {
+                            if let image = userProfile.profileImage {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(Circle())
+                            } else {
+                                Image(systemName: "person.circle.fill")
+                                    .resizable()
+                                    .frame(width: 100, height: 100)
+                                    .foregroundStyle(.orange)
+                            }
+
+                            Text(userProfile.bibNumber)
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.orange)
+                                .foregroundStyle(.white)
+                                .cornerRadius(8)
+                        }
+
+                        Text(userProfile.name)
+                            .font(.title2)
+                            .fontWeight(.bold)
+
+                        Text(userProfile.location)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        HStack {
+                            Label(ordinalSTP(userProfile.stpCount), systemImage: "bicycle")
+                            Text("•")
+                            Label(userProfile.rideType, systemImage: userProfile.rideType == "One-Day" ? "sun.max" : "moon.stars")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.top)
+
+                    // Ride Stats
+                    HStack(spacing: 20) {
+                        VStack {
+                            Text("\(userProfile.stpCount)")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Text("STPs")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        VStack {
+                            Text("68.5")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Text("Miles Today")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        VStack {
+                            Text("6")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Text("Badges")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+
+                    // Badges
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Badges Earned")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 16) {
+                                BadgeItem(icon: "figure.outdoor.cycle", title: "Started", color: .green)
+                                BadgeItem(icon: "50.circle.fill", title: "50 Miles", color: .blue)
+                                BadgeItem(icon: "sunrise.fill", title: "Early Bird", color: .orange)
+                                BadgeItem(icon: "camera.fill", title: "Photog", color: .purple)
+                                BadgeItem(icon: "person.2.fill", title: "Team Player", color: .pink)
+                                BadgeItem(icon: "star.fill", title: "2023 STP", color: .yellow)
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+
+                    // Emergency Contact
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Emergency Contact")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        HStack {
+                            Image(systemName: "phone.circle.fill")
+                                .font(.title)
+                                .foregroundStyle(.green)
+                            VStack(alignment: .leading) {
+                                Text(userProfile.emergencyContactName)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Text(userProfile.emergencyContactPhone)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button(action: { showingEditProfile = true }) {
+                                Text("Edit")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                    }
+
+                    // Options
+                    VStack(spacing: 12) {
+                        Button(action: { showingEditProfile = true }) {
+                            ProfileOptionRow(icon: "pencil", title: "Edit Profile", color: .blue)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { showingNotifications = true }) {
+                            ProfileOptionRow(icon: "bell.fill", title: "Notifications", color: .red)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { showingSettings = true }) {
+                            ProfileOptionRow(icon: "gearshape.fill", title: "Settings", color: .gray)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { showingShareSheet = true }) {
+                            ProfileOptionRow(icon: "square.and.arrow.up", title: "Share My Progress", color: .orange)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal)
+                }
+                .padding(.bottom, 20)
+            }
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showingEditProfile) {
+                EditProfileView(userProfile: userProfile)
+            }
+            .sheet(isPresented: $showingNotifications) {
+                NotificationsSettingsView(userProfile: userProfile)
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView(userProfile: userProfile)
+            }
+            .sheet(isPresented: $showingShareSheet) {
+                ShareProgressView(userProfile: userProfile)
+            }
+        }
+    }
+
+    func ordinalSTP(_ count: Int) -> String {
+        let suffix: String
+        switch count {
+        case 1: suffix = "st"
+        case 2: suffix = "nd"
+        case 3: suffix = "rd"
+        default: suffix = "th"
+        }
+        return "\(count)\(suffix) STP"
+    }
+}
+
+struct ProfileOptionRow: View {
+    let icon: String
+    let title: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+                .frame(width: 24)
+            Text(title)
+                .font(.subheadline)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Badge Item
+struct BadgeItem: View {
+    let icon: String
+    let title: String
+    let color: Color
+    var locked: Bool = false
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(locked ? Color(.systemGray4) : color.opacity(0.2))
+                    .frame(width: 60, height: 60)
+                Image(systemName: locked ? "lock.fill" : icon)
+                    .font(.title2)
+                    .foregroundStyle(locked ? .gray : color)
+            }
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(locked ? .secondary : .primary)
+        }
+    }
+}
+
+// MARK: - Help View
+struct HelpView: View {
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    HelpCard(icon: "cross.circle.fill", title: "Medical Emergency", description: "Call 911 or find nearest medical tent", color: .red)
+                    HelpCard(icon: "wrench.fill", title: "Bike Mechanical", description: "Find bike support or request SAG", color: .blue)
+                    HelpCard(icon: "car.fill", title: "Request SAG Wagon", description: "Get a ride to the next checkpoint", color: .purple)
+                    HelpCard(icon: "phone.fill", title: "Call Event Support", description: "(206) 555-0STP", color: .green)
+                    HelpCard(icon: "map.fill", title: "I'm Lost", description: "Get directions back to the route", color: .orange)
+                    HelpCard(icon: "person.fill.questionmark", title: "Find a Rider", description: "Locate someone in your group", color: .teal)
+                }
+                .padding()
+            }
+            .navigationTitle("Help")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+struct HelpCard: View {
+    let icon: String
+    let title: String
+    let description: String
+    var color: Color = .blue
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(color)
+                .frame(width: 40)
+
+            VStack(alignment: .leading) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Emergency View
+struct EmergencyView: View {
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                Image(systemName: "cross.circle.fill")
+                    .font(.system(size: 60))
+                    .foregroundStyle(.red)
+
+                Text("Emergency Assistance")
+                    .font(.title2)
+                    .fontWeight(.bold)
+
+                Text("Your current location will be shared with emergency services")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                VStack(spacing: 12) {
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "phone.fill")
+                            Text("Call 911")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(.red)
+                        .foregroundStyle(.white)
+                        .cornerRadius(12)
+                    }
+
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "cross.fill")
+                            Text("Medical Tent")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(.orange)
+                        .foregroundStyle(.white)
+                        .cornerRadius(12)
+                    }
+
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "car.fill")
+                            Text("Request SAG Wagon")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color(.systemGray5))
+                        .foregroundStyle(.primary)
+                        .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal)
+
+                Spacer()
+
+                VStack(spacing: 8) {
+                    Text("Event Support Line")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("(206) 555-0STP")
+                        .font(.headline)
+                        .foregroundStyle(.orange)
+                }
+            }
+            .padding(.top, 40)
+            .navigationTitle("Emergency")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - FAQ View
+struct FAQView: View {
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 12) {
+                    FAQItem(question: "What is the STP route?", answer: "The Seattle to Portland Bicycle Classic covers 206 miles from the University of Washington in Seattle to Holladay Park in Portland, Oregon.")
+                    FAQItem(question: "Where are the rest stops?", answer: "There are staffed rest stops every 10-15 miles with water, food, restrooms, and bike support. Major stops include Spanaway, Yelm, Centralia, and St. Helens.")
+                    FAQItem(question: "What if I can't finish?", answer: "SAG (Support and Gear) wagons patrol the route and can give you a ride to the next checkpoint or finish. Use the Help button to request one.")
+                    FAQItem(question: "How do I find my group?", answer: "Use the Riders tab to see your riding group's location and progress. You can also search for riders by name or bib number.")
+                    FAQItem(question: "What's the cutoff time?", answer: "Two-day riders should reach Centralia by 7 PM on Day 1. One-day riders should reach Portland by 10 PM. SAG support ends at these times.")
+                    FAQItem(question: "Where do I sleep overnight?", answer: "Two-day riders stay at Centralia College. Your gear truck will have your overnight bag waiting for you.")
+                }
+                .padding()
+            }
+            .navigationTitle("FAQ")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+struct FAQItem: View {
+    let question: String
+    let answer: String
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: { withAnimation { isExpanded.toggle() } }) {
+                HStack {
+                    Text(question)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if isExpanded {
+                Text(answer)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Edit Profile View
+struct EditProfileView: View {
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var userProfile: UserProfileManager
+
+    @State private var name: String = ""
+    @State private var location: String = ""
+    @State private var bibNumber: String = ""
+    @State private var stpCount: Int = 1
+    @State private var rideType: String = "Two-Day"
+    @State private var emergencyContactName: String = ""
+    @State private var emergencyContactPhone: String = ""
+
+    @State private var showingImagePicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+
+    let rideTypes = ["One-Day", "Two-Day"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                // Profile Photo Section
+                Section {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            if let image = userProfile.profileImage {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(Circle())
+                            } else {
+                                Image(systemName: "person.circle.fill")
+                                    .resizable()
+                                    .frame(width: 100, height: 100)
+                                    .foregroundStyle(.orange)
+                            }
+
+                            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                                Text("Change Photo")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.orange)
+                            }
+
+                            if userProfile.profileImage != nil {
+                                Button("Remove Photo") {
+                                    userProfile.saveProfileImage(nil)
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .listRowBackground(Color.clear)
+                }
+
+                // Personal Info
+                Section("Personal Information") {
+                    TextField("Name", text: $name)
+                    TextField("Location", text: $location)
+                    TextField("Bib Number", text: $bibNumber)
+                }
+
+                // Ride Info
+                Section("Ride Information") {
+                    Stepper("STP Count: \(stpCount)", value: $stpCount, in: 1...50)
+                    Picker("Ride Type", selection: $rideType) {
+                        ForEach(rideTypes, id: \.self) { type in
+                            Text(type).tag(type)
+                        }
+                    }
+                }
+
+                // Emergency Contact
+                Section("Emergency Contact") {
+                    TextField("Contact Name", text: $emergencyContactName)
+                    TextField("Phone Number", text: $emergencyContactPhone)
+                        .keyboardType(.phonePad)
+                }
+            }
+            .navigationTitle("Edit Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        saveProfile()
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+            .onAppear {
+                loadProfile()
+            }
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                Task {
+                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        userProfile.saveProfileImage(image)
+                    }
+                }
+            }
+        }
+    }
+
+    func loadProfile() {
+        name = userProfile.name
+        location = userProfile.location
+        bibNumber = userProfile.bibNumber
+        stpCount = userProfile.stpCount
+        rideType = userProfile.rideType
+        emergencyContactName = userProfile.emergencyContactName
+        emergencyContactPhone = userProfile.emergencyContactPhone
+    }
+
+    func saveProfile() {
+        userProfile.name = name
+        userProfile.location = location
+        userProfile.bibNumber = bibNumber
+        userProfile.stpCount = stpCount
+        userProfile.rideType = rideType
+        userProfile.emergencyContactName = emergencyContactName
+        userProfile.emergencyContactPhone = emergencyContactPhone
+    }
+}
+
+// MARK: - Notifications Settings View
+struct NotificationsSettingsView: View {
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var userProfile: UserProfileManager
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle("Enable Notifications", isOn: $userProfile.notificationsEnabled)
+                } footer: {
+                    Text("Turn off to disable all notifications from STP App")
+                }
+
+                Section("Ride Alerts") {
+                    Toggle("Checkpoint Alerts", isOn: $userProfile.checkpointAlerts)
+                        .disabled(!userProfile.notificationsEnabled)
+                    Toggle("Weather Alerts", isOn: $userProfile.weatherAlerts)
+                        .disabled(!userProfile.notificationsEnabled)
+                }
+
+                Section {
+                    Toggle("Friend Updates", isOn: $userProfile.friendUpdates)
+                        .disabled(!userProfile.notificationsEnabled)
+                } header: {
+                    Text("Social")
+                } footer: {
+                    Text("Get notified when friends reach checkpoints")
+                }
+
+                Section {
+                    HStack {
+                        Image(systemName: "bell.badge.fill")
+                            .foregroundStyle(.orange)
+                        Text("Notification Preview")
+                        Spacer()
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "flag.fill")
+                                .foregroundStyle(.green)
+                            Text("Checkpoint Alert")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        Text("You're 2 miles from Spanaway Park!")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("Notifications")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Settings View
+struct SettingsView: View {
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var userProfile: UserProfileManager
+
+    let distanceUnits = ["Miles", "Kilometers"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Display") {
+                    Picker("Distance Unit", selection: $userProfile.distanceUnit) {
+                        ForEach(distanceUnits, id: \.self) { unit in
+                            Text(unit).tag(unit)
+                        }
+                    }
+
+                    Toggle("Dark Mode", isOn: $userProfile.darkMode)
+                }
+
+                Section("Data") {
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundStyle(.blue)
+                            Text("Export Ride Data")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Sync with Health App")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
+
+                Section("About") {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text("1.0.0")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "doc.text.fill")
+                                .foregroundStyle(.gray)
+                            Text("Privacy Policy")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "doc.text.fill")
+                                .foregroundStyle(.gray)
+                            Text("Terms of Service")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Share Progress View
+struct ShareProgressView: View {
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var userProfile: UserProfileManager
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                // Preview Card
+                VStack(spacing: 16) {
+                    HStack {
+                        if let image = userProfile.profileImage {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 50, height: 50)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .frame(width: 50, height: 50)
+                                .foregroundStyle(.orange)
+                        }
+
+                        VStack(alignment: .leading) {
+                            Text(userProfile.name)
+                                .font(.headline)
+                            Text("STP 2026 • \(userProfile.bibNumber)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+
+                    VStack(spacing: 8) {
+                        Text("68.5 miles")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                        Text("33% Complete")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color(.systemGray5))
+                                    .frame(height: 12)
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(.orange)
+                                    .frame(width: geometry.size.width * 0.33, height: 12)
+                            }
+                        }
+                        .frame(height: 12)
+                    }
+
+                    HStack {
+                        Image(systemName: "mappin.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("Seattle")
+                        Spacer()
+                        Text("Portland")
+                        Image(systemName: "flag.checkered")
+                            .foregroundStyle(.orange)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(16)
+                .padding(.horizontal)
+
+                Text("Share your progress with friends and family!")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+
+                // Share Options
+                VStack(spacing: 12) {
+                    ShareButton(icon: "message.fill", title: "Messages", color: .green)
+                    ShareButton(icon: "camera.fill", title: "Instagram Story", color: .purple)
+                    ShareButton(icon: "square.and.arrow.up", title: "More Options", color: .blue)
+                }
+                .padding(.horizontal)
+
+                Spacer()
+            }
+            .padding(.top, 24)
+            .navigationTitle("Share Progress")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+struct ShareButton: View {
+    let icon: String
+    let title: String
+    let color: Color
+
+    var body: some View {
+        Button(action: {}) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundStyle(.white)
+                    .frame(width: 30)
+                Text(title)
+                    .foregroundStyle(.white)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .padding()
+            .background(color)
+            .cornerRadius(12)
+        }
+    }
+}
+
+#Preview {
+    ContentView()
+}
