@@ -222,6 +222,14 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         guard let location = locations.last else { return }
         userLocation = location.coordinate
         lastUpdated = Date()
+
+        // Print location to console for debugging
+        print("📍 GPS Location Updated:")
+        print("   Latitude: \(location.coordinate.latitude)")
+        print("   Longitude: \(location.coordinate.longitude)")
+        print("   Accuracy: \(location.horizontalAccuracy)m")
+        print("   Time: \(Date())")
+
         // Stop continuous updates to save battery, will resume on next timer tick
         locationManager.stopUpdatingLocation()
     }
