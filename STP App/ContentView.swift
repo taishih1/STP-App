@@ -296,9 +296,31 @@ struct ContentView: View {
 struct HomeView: View {
     @Binding var showingProfile: Bool
     @ObservedObject var userProfile: UserProfileManager
+    @StateObject private var locationManager = LocationManager()
     @State private var showingHelp = false
     @State private var showingFAQ = false
     @State private var showingEmergency = false
+    @State private var selectedCheckpoint: STPCheckpoint?
+
+    // Calculate distance in miles between two coordinates
+    func distanceInMiles(from: CLLocationCoordinate2D, to: STPCheckpoint) -> Double {
+        let fromLocation = CLLocation(latitude: from.latitude, longitude: from.longitude)
+        let toLocation = CLLocation(latitude: to.latitude, longitude: to.longitude)
+        let distanceMeters = fromLocation.distance(from: toLocation)
+        return distanceMeters / 1609.34 // Convert to miles
+    }
+
+    // Get nearest checkpoints sorted by distance
+    var nearestCheckpoints: [(checkpoint: STPCheckpoint, distance: Double)] {
+        guard let userLocation = locationManager.userLocation else {
+            return []
+        }
+        return stpCheckpoints
+            .map { checkpoint in
+                (checkpoint: checkpoint, distance: distanceInMiles(from: userLocation, to: checkpoint))
+            }
+            .sorted { $0.distance < $1.distance }
+    }
 
     var body: some View {
         NavigationStack {
@@ -367,7 +389,11 @@ struct HomeView: View {
 
                     // Current Status
                     HStack(spacing: 12) {
-                        StatusCard(icon: "location.fill", title: "Next Stop", value: "Spanaway", subvalue: "12.3 mi away", color: .blue)
+                        if let nearest = nearestCheckpoints.first {
+                            StatusCard(icon: "location.fill", title: "Nearest Stop", value: nearest.checkpoint.name.components(separatedBy: " - ").last ?? nearest.checkpoint.name, subvalue: String(format: "%.1f mi away", nearest.distance), color: .blue)
+                        } else {
+                            StatusCard(icon: "location.fill", title: "Nearest Stop", value: "Loading...", subvalue: "Enable GPS", color: .blue)
+                        }
                         StatusCard(icon: "clock.fill", title: "Ride Time", value: "4:32:15", subvalue: "Moving", color: .green)
                     }
                     .padding(.horizontal)
@@ -407,18 +433,65 @@ struct HomeView: View {
                         .padding(.horizontal)
                     }
 
-                    // Upcoming Checkpoints
+                    // Nearest Stops (GPS-based)
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Upcoming Checkpoints")
-                            .font(.headline)
-                            .padding(.horizontal)
-
-                        VStack(spacing: 8) {
-                            CheckpointRow(name: "Spanaway Park", mile: 80.7, amenities: ["food", "water", "restroom", "bike"], isNext: true)
-                            CheckpointRow(name: "Roy (Mini Stop)", mile: 93.2, amenities: ["water", "restroom"], isNext: false)
-                            CheckpointRow(name: "Yelm", mile: 103.5, amenities: ["food", "water", "restroom", "bike", "medical"], isNext: false)
+                        HStack {
+                            Text("Nearest Stops")
+                                .font(.headline)
+                            Spacer()
+                            if locationManager.userLocation != nil {
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(.green)
+                                        .frame(width: 6, height: 6)
+                                    Text("GPS")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else {
+                                Button(action: { locationManager.requestPermission() }) {
+                                    Text("Enable GPS")
+                                        .font(.caption)
+                                        .foregroundStyle(.blue)
+                                }
+                            }
                         }
                         .padding(.horizontal)
+
+                        if nearestCheckpoints.isEmpty {
+                            HStack {
+                                Image(systemName: "location.slash")
+                                    .foregroundStyle(.secondary)
+                                Text("Enable GPS to see nearest stops")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        } else {
+                            VStack(spacing: 8) {
+                                ForEach(Array(nearestCheckpoints.prefix(3).enumerated()), id: \.element.checkpoint.id) { index, item in
+                                    NearestStopRow(
+                                        checkpoint: item.checkpoint,
+                                        distance: item.distance,
+                                        isNearest: index == 0
+                                    ) {
+                                        selectedCheckpoint = item.checkpoint
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                    .onAppear {
+                        locationManager.requestPermission()
+                        if locationManager.authorizationStatus == .authorizedWhenInUse ||
+                           locationManager.authorizationStatus == .authorizedAlways {
+                            locationManager.startTracking()
+                        }
                     }
 
                     // Your Achievements
@@ -461,7 +534,98 @@ struct HomeView: View {
             .sheet(isPresented: $showingEmergency) {
                 EmergencyView()
             }
+            .sheet(item: $selectedCheckpoint) { checkpoint in
+                CheckpointDetailView(checkpoint: checkpoint)
+                    .presentationDetents([.medium, .large])
+            }
         }
+    }
+}
+
+// MARK: - Nearest Stop Row
+struct NearestStopRow: View {
+    let checkpoint: STPCheckpoint
+    let distance: Double
+    let isNearest: Bool
+    let onTap: () -> Void
+
+    var typeColor: Color {
+        switch checkpoint.type {
+        case .start: return .orange
+        case .restStop: return .green
+        case .miniStop: return .blue
+        case .finish: return .orange
+        }
+    }
+
+    var typeIcon: String {
+        switch checkpoint.type {
+        case .start: return "flag.fill"
+        case .restStop: return "fork.knife"
+        case .miniStop: return "cup.and.saucer.fill"
+        case .finish: return "flag.checkered"
+        }
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(typeColor)
+                        .frame(width: 40, height: 40)
+                    Image(systemName: typeIcon)
+                        .font(.system(size: 16))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(checkpoint.name)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        if isNearest {
+                            Text("NEAREST")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.green)
+                                .cornerRadius(4)
+                        }
+                    }
+                    Text("Mile \(Int(checkpoint.mile))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(String(format: "%.1f", distance))
+                        .font(.headline)
+                        .foregroundStyle(isNearest ? .green : .primary)
+                    Text("miles")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+            .background(isNearest ? Color.green.opacity(0.1) : Color(.systemGray6))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isNearest ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
