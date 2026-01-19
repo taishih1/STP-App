@@ -250,6 +250,124 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 struct ContentView: View {
     @State private var showingProfile = false
     @StateObject private var userProfile = UserProfileManager.shared
+    @StateObject private var locationManager = LocationManager()
+    @State private var hasRequestedPermission = false
+
+    var body: some View {
+        Group {
+            if locationManager.authorizationStatus == .notDetermined && !hasRequestedPermission {
+                LocationPermissionView(locationManager: locationManager, hasRequestedPermission: $hasRequestedPermission)
+            } else {
+                MainAppView(showingProfile: $showingProfile, userProfile: userProfile, locationManager: locationManager)
+            }
+        }
+        .environmentObject(userProfile)
+        .environmentObject(locationManager)
+        .preferredColorScheme(userProfile.darkMode ? .dark : nil)
+    }
+}
+
+// MARK: - Location Permission View
+struct LocationPermissionView: View {
+    @ObservedObject var locationManager: LocationManager
+    @Binding var hasRequestedPermission: Bool
+
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            // Icon
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [.orange, .orange.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 120, height: 120)
+                Image(systemName: "location.fill")
+                    .font(.system(size: 50))
+                    .foregroundStyle(.white)
+            }
+
+            // Title and description
+            VStack(spacing: 16) {
+                Text("Enable Location")
+                    .font(.title)
+                    .fontWeight(.bold)
+
+                Text("STP App needs your location to show your position on the route, find nearby checkpoints, and track your progress from Seattle to Portland.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            // Features list
+            VStack(alignment: .leading, spacing: 16) {
+                PermissionFeatureRow(icon: "map.fill", title: "Route Tracking", description: "See your position on the STP route")
+                PermissionFeatureRow(icon: "mappin.circle.fill", title: "Nearest Stops", description: "Find checkpoints closest to you")
+                PermissionFeatureRow(icon: "location.circle.fill", title: "Live Updates", description: "Track your progress in real-time")
+            }
+            .padding(.horizontal, 32)
+
+            Spacer()
+
+            // Buttons
+            VStack(spacing: 12) {
+                Button(action: {
+                    locationManager.requestPermission()
+                    hasRequestedPermission = true
+                }) {
+                    Text("Allow Location Access")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(.orange)
+                        .cornerRadius(14)
+                }
+
+                Button(action: {
+                    hasRequestedPermission = true
+                }) {
+                    Text("Maybe Later")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 32)
+            .padding(.bottom, 48)
+        }
+        .background(Color(.systemBackground))
+    }
+}
+
+struct PermissionFeatureRow: View {
+    let icon: String
+    let title: String
+    let description: String
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(.orange)
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Main App View
+struct MainAppView: View {
+    @Binding var showingProfile: Bool
+    @ObservedObject var userProfile: UserProfileManager
+    @ObservedObject var locationManager: LocationManager
 
     var body: some View {
         TabView {
@@ -287,8 +405,13 @@ struct ContentView: View {
         .sheet(isPresented: $showingProfile) {
             ProfileView(userProfile: userProfile)
         }
-        .environmentObject(userProfile)
-        .preferredColorScheme(userProfile.darkMode ? .dark : nil)
+        .onAppear {
+            // Start tracking if permission already granted
+            if locationManager.authorizationStatus == .authorizedWhenInUse ||
+               locationManager.authorizationStatus == .authorizedAlways {
+                locationManager.startTracking()
+            }
+        }
     }
 }
 
@@ -296,7 +419,7 @@ struct ContentView: View {
 struct HomeView: View {
     @Binding var showingProfile: Bool
     @ObservedObject var userProfile: UserProfileManager
-    @StateObject private var locationManager = LocationManager()
+    @EnvironmentObject var locationManager: LocationManager
     @State private var showingHelp = false
     @State private var showingFAQ = false
     @State private var showingEmergency = false
@@ -484,13 +607,6 @@ struct HomeView: View {
                                 }
                             }
                             .padding(.horizontal)
-                        }
-                    }
-                    .onAppear {
-                        locationManager.requestPermission()
-                        if locationManager.authorizationStatus == .authorizedWhenInUse ||
-                           locationManager.authorizationStatus == .authorizedAlways {
-                            locationManager.startTracking()
                         }
                     }
 
@@ -923,7 +1039,7 @@ let stpCheckpoints: [STPCheckpoint] = [
 // MARK: - Route View
 struct RouteView: View {
     @State private var selectedFilter: RouteFilter = .all
-    @StateObject private var locationManager = LocationManager()
+    @EnvironmentObject var locationManager: LocationManager
     @State private var mapRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 46.5, longitude: -122.6),
         span: MKCoordinateSpan(latitudeDelta: 3.0, longitudeDelta: 1.5)
