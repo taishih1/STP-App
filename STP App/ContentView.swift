@@ -65,6 +65,15 @@ struct RouteMapView: UIViewRepresentable {
         mapView.isRotateEnabled = true
         mapView.isPitchEnabled = true
 
+        // Show map controls
+        mapView.showsCompass = true
+        mapView.showsScale = true
+
+        #if targetEnvironment(macCatalyst)
+        // Mac Catalyst supports trackpad/mouse scroll wheel zoom natively
+        mapView.showsZoomControls = true
+        #endif
+
         // Add route polyline
         let coordinates = checkpoints.map {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
@@ -846,6 +855,42 @@ struct RouteView: View {
                                     .background(.ultraThinMaterial)
                                     .clipShape(Circle())
                             }
+
+                            // Zoom controls
+                            VStack(spacing: 0) {
+                                Button(action: {
+                                    withAnimation {
+                                        mapRegion.span = MKCoordinateSpan(
+                                            latitudeDelta: max(mapRegion.span.latitudeDelta / 2, 0.01),
+                                            longitudeDelta: max(mapRegion.span.longitudeDelta / 2, 0.01)
+                                        )
+                                    }
+                                }) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(.primary)
+                                        .frame(width: 32, height: 32)
+                                }
+
+                                Divider()
+                                    .frame(width: 24)
+
+                                Button(action: {
+                                    withAnimation {
+                                        mapRegion.span = MKCoordinateSpan(
+                                            latitudeDelta: min(mapRegion.span.latitudeDelta * 2, 90),
+                                            longitudeDelta: min(mapRegion.span.longitudeDelta * 2, 180)
+                                        )
+                                    }
+                                }) {
+                                    Image(systemName: "minus")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(.primary)
+                                        .frame(width: 32, height: 32)
+                                }
+                            }
+                            .background(.ultraThinMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         .padding(8)
                     }
