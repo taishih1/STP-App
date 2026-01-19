@@ -209,7 +209,13 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     func startTracking() {
         print("🔧 Starting location tracking...")
+        print("🔧 Current authorization: \(locationManager.authorizationStatus.rawValue)")
         isGettingInitialLocation = true
+
+        // Request a single location first
+        locationManager.requestLocation()
+
+        // Also start continuous updates
         locationManager.startUpdatingLocation()
 
         // Set up 5-minute update timer for periodic updates
@@ -744,6 +750,22 @@ struct HomeView: View {
             .sheet(item: $selectedCheckpoint) { checkpoint in
                 CheckpointDetailView(checkpoint: checkpoint)
                     .presentationDetents([.medium, .large])
+            }
+            .onAppear {
+                print("🏠 HomeView appeared")
+                print("🏠 Authorization status: \(locationManager.authorizationStatus.rawValue)")
+                print("🏠 User location: \(String(describing: locationManager.userLocation))")
+                print("🏠 Nearest checkpoints count: \(nearestCheckpoints.count)")
+
+                // Try to start tracking if authorized
+                if locationManager.authorizationStatus == .authorizedWhenInUse ||
+                   locationManager.authorizationStatus == .authorizedAlways {
+                    print("🏠 Starting tracking from HomeView...")
+                    locationManager.startTracking()
+                }
+            }
+            .onChange(of: locationManager.userLocation?.latitude) { _, newLat in
+                print("🏠 Location changed! New lat: \(String(describing: newLat))")
             }
         }
     }
