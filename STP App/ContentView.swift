@@ -46,6 +46,128 @@ class UserProfileManager: ObservableObject {
     }
 }
 
+// MARK: - Route Map View (with polyline)
+struct RouteMapView: UIViewRepresentable {
+    @Binding var region: MKCoordinateRegion
+    let checkpoints: [STPCheckpoint]
+    let showsUserLocation: Bool
+    var onCheckpointTapped: ((STPCheckpoint) -> Void)?
+
+    func makeUIView(context: Context) -> MKMapView {
+        let mapView = MKMapView()
+        mapView.delegate = context.coordinator
+        mapView.showsUserLocation = showsUserLocation
+        mapView.setRegion(region, animated: false)
+
+        // Add route polyline
+        let coordinates = checkpoints.map {
+            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+        }
+        let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
+        mapView.addOverlay(polyline)
+
+        // Add checkpoint annotations
+        for checkpoint in checkpoints {
+            let annotation = CheckpointAnnotation(checkpoint: checkpoint)
+            mapView.addAnnotation(annotation)
+        }
+
+        return mapView
+    }
+
+    func updateUIView(_ mapView: MKMapView, context: Context) {
+        mapView.showsUserLocation = showsUserLocation
+        if mapView.region.center.latitude != region.center.latitude ||
+           mapView.region.center.longitude != region.center.longitude {
+            mapView.setRegion(region, animated: true)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, MKMapViewDelegate {
+        var parent: RouteMapView
+
+        init(_ parent: RouteMapView) {
+            self.parent = parent
+        }
+
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let polyline = overlay as? MKPolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                renderer.strokeColor = UIColor.systemOrange
+                renderer.lineWidth = 4
+                renderer.lineDashPattern = nil
+                return renderer
+            }
+            return MKOverlayRenderer(overlay: overlay)
+        }
+
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if annotation is MKUserLocation {
+                return nil // Use default blue dot
+            }
+
+            guard let checkpointAnnotation = annotation as? CheckpointAnnotation else {
+                return nil
+            }
+
+            let identifier = "CheckpointMarker"
+            var annotationView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+
+            if annotationView == nil {
+                annotationView = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+                annotationView?.canShowCallout = true
+                annotationView?.rightCalloutAccessoryView = UIButton(type: .detailDisclosure)
+            } else {
+                annotationView?.annotation = annotation
+            }
+
+            let checkpoint = checkpointAnnotation.checkpoint
+            switch checkpoint.type {
+            case .start:
+                annotationView?.markerTintColor = .systemOrange
+                annotationView?.glyphImage = UIImage(systemName: "flag.fill")
+            case .restStop:
+                annotationView?.markerTintColor = .systemGreen
+                annotationView?.glyphImage = UIImage(systemName: "fork.knife")
+            case .miniStop:
+                annotationView?.markerTintColor = .systemBlue
+                annotationView?.glyphImage = UIImage(systemName: "cup.and.saucer.fill")
+            case .finish:
+                annotationView?.markerTintColor = .systemOrange
+                annotationView?.glyphImage = UIImage(systemName: "flag.checkered")
+            }
+
+            return annotationView
+        }
+
+        func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView, calloutAccessoryControlTapped control: UIControl) {
+            guard let checkpointAnnotation = view.annotation as? CheckpointAnnotation else { return }
+            parent.onCheckpointTapped?(checkpointAnnotation.checkpoint)
+        }
+
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            parent.region = mapView.region
+        }
+    }
+}
+
+class CheckpointAnnotation: NSObject, MKAnnotation {
+    let checkpoint: STPCheckpoint
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: checkpoint.latitude, longitude: checkpoint.longitude)
+    }
+    var title: String? { checkpoint.name }
+    var subtitle: String? { "Mile \(Int(checkpoint.mile))" }
+
+    init(checkpoint: STPCheckpoint) {
+        self.checkpoint = checkpoint
+    }
+}
+
 // MARK: - Location Manager
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let locationManager = CLLocationManager()
@@ -642,15 +764,16 @@ struct RouteView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    // Interactive Map
+                    // Interactive Map with Route Line
                     ZStack(alignment: .topTrailing) {
-                        Map(coordinateRegion: $mapRegion, showsUserLocation: true, annotationItems: stpCheckpoints) { checkpoint in
-                            MapAnnotation(coordinate: CLLocationCoordinate2D(latitude: checkpoint.latitude, longitude: checkpoint.longitude)) {
-                                CheckpointMapMarker(checkpoint: checkpoint) {
-                                    selectedCheckpoint = checkpoint
-                                }
+                        RouteMapView(
+                            region: $mapRegion,
+                            checkpoints: stpCheckpoints,
+                            showsUserLocation: locationManager.authorizationStatus == .authorizedWhenInUse || locationManager.authorizationStatus == .authorizedAlways,
+                            onCheckpointTapped: { checkpoint in
+                                selectedCheckpoint = checkpoint
                             }
-                        }
+                        )
                         .frame(height: 280)
                         .clipShape(RoundedRectangle(cornerRadius: 16))
 
