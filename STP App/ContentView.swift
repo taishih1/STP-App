@@ -1035,10 +1035,14 @@ struct CheckpointDetailView: View {
                                     .font(.subheadline)
                                     .fontWeight(.medium)
 
+                                Text("\(String(format: "%.5f", checkpoint.latitude)), \(String(format: "%.5f", checkpoint.longitude))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+
                                 Button(action: {
-                                    // Open in Maps
-                                    let query = checkpoint.location.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                                    if let url = URL(string: "maps://?q=\(query)") {
+                                    // Open in Maps with coordinates
+                                    if let url = URL(string: "maps://?ll=\(checkpoint.latitude),\(checkpoint.longitude)&q=\(checkpoint.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
                                         UIApplication.shared.open(url)
                                     }
                                 }) {
