@@ -1176,6 +1176,33 @@ struct RouteView: View {
         }
     }
 
+    // Find the nearest checkpoint based on GPS
+    var nearestCheckpointId: UUID? {
+        guard let userLocation = locationManager.userLocation else { return nil }
+        let userCLLocation = CLLocation(latitude: userLocation.latitude, longitude: userLocation.longitude)
+
+        var nearestId: UUID?
+        var nearestDistance: Double = .infinity
+
+        for checkpoint in stpCheckpoints {
+            let checkpointLocation = CLLocation(latitude: checkpoint.latitude, longitude: checkpoint.longitude)
+            let distance = userCLLocation.distance(from: checkpointLocation)
+            if distance < nearestDistance {
+                nearestDistance = distance
+                nearestId = checkpoint.id
+            }
+        }
+        return nearestId
+    }
+
+    // Get distance to a checkpoint in miles
+    func distanceToCheckpoint(_ checkpoint: STPCheckpoint) -> Double? {
+        guard let userLocation = locationManager.userLocation else { return nil }
+        let userCLLocation = CLLocation(latitude: userLocation.latitude, longitude: userLocation.longitude)
+        let checkpointLocation = CLLocation(latitude: checkpoint.latitude, longitude: checkpoint.longitude)
+        return userCLLocation.distance(from: checkpointLocation) / 1609.34
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -1347,7 +1374,9 @@ struct RouteView: View {
                             ForEach(Array(filteredCheckpoints.enumerated()), id: \.element.id) { index, checkpoint in
                                 STPCheckpointRow(
                                     checkpoint: checkpoint,
-                                    isLast: index == filteredCheckpoints.count - 1
+                                    isLast: index == filteredCheckpoints.count - 1,
+                                    isNearest: checkpoint.id == nearestCheckpointId,
+                                    distanceMiles: distanceToCheckpoint(checkpoint)
                                 )
                             }
                         }
@@ -1435,6 +1464,8 @@ struct LegendItem: View {
 struct STPCheckpointRow: View {
     let checkpoint: STPCheckpoint
     var isLast: Bool = false
+    var isNearest: Bool = false
+    var distanceMiles: Double? = nil
     @State private var showingDetail = false
 
     var typeColor: Color {
@@ -1462,34 +1493,51 @@ struct STPCheckpointRow: View {
                 VStack(spacing: 0) {
                     ZStack {
                         Circle()
-                            .fill(typeColor)
-                            .frame(width: 28, height: 28)
-                        Image(systemName: typeIcon)
-                            .font(.system(size: 12, weight: .bold))
+                            .fill(isNearest ? .green : typeColor)
+                            .frame(width: isNearest ? 32 : 28, height: isNearest ? 32 : 28)
+                        Image(systemName: isNearest ? "location.fill" : typeIcon)
+                            .font(.system(size: isNearest ? 14 : 12, weight: .bold))
                             .foregroundStyle(.white)
                     }
                     if !isLast {
                         Rectangle()
                             .fill(Color(.systemGray4))
-                            .frame(width: 2, height: 50)
+                            .frame(width: 2, height: isNearest ? 46 : 50)
                     }
                 }
 
                 // Content
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(checkpoint.name)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.primary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(checkpoint.name)
+                                .font(isNearest ? .headline : .subheadline)
+                                .fontWeight(isNearest ? .bold : .semibold)
+                                .foregroundStyle(.primary)
+                            if isNearest {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "star.fill")
+                                        .font(.caption2)
+                                    Text("NEAREST STOP")
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                    if let distance = distanceMiles {
+                                        Text("• \(String(format: "%.1f", distance)) mi away")
+                                            .font(.caption2)
+                                            .fontWeight(.medium)
+                                    }
+                                }
+                                .foregroundStyle(.green)
+                            }
+                        }
                         Spacer()
                         Text("Mile \(Int(checkpoint.mile))")
                             .font(.caption)
                             .fontWeight(.medium)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(typeColor.opacity(0.2))
-                            .foregroundStyle(typeColor)
+                            .background(isNearest ? Color.green.opacity(0.2) : typeColor.opacity(0.2))
+                            .foregroundStyle(isNearest ? .green : typeColor)
                             .cornerRadius(8)
                     }
 
