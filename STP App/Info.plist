@@ -3,6 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>STP App needs your location to show your position on the route map and track your progress along the Seattle to Portland ride.</string>
+	<string>STP App needs your location to show your position on the route map, find nearby checkpoints, and track your progress along the Seattle to Portland ride.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>STP App needs your location to show your position on the route map, find nearby checkpoints, and track your progress along the Seattle to Portland ride.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>STP App needs your location to show your position on the route map, find nearby checkpoints, and track your progress along the Seattle to Portland ride.</string>
 </dict>
 </plist>
