@@ -14,11 +14,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A1B2C3D400000009 /* STP App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "STP App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D400000002 /* STP_AppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STP_AppApp.swift; sourceTree = "<group>"; };
 		A1B2C3D400000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A1B2C3D400000006 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1B2C3D400000008 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		A1B2C3D400000009 /* STP App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "STP App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -32,20 +32,12 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A1B2C3D40000000B /* Root */ = {
+		A1B2C3D40000000B = {
 			isa = PBXGroup;
 			children = (
 				A1B2C3D40000000C /* STP App */,
 				A1B2C3D40000000D /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		A1B2C3D40000000D /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D400000009 /* STP App.app */,
-			);
-			name = Products;
 			sourceTree = "<group>";
 		};
 		A1B2C3D40000000C /* STP App */ = {
@@ -57,6 +49,14 @@
 				A1B2C3D40000000E /* Preview Content */,
 			);
 			path = "STP App";
+			sourceTree = "<group>";
+		};
+		A1B2C3D40000000D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D400000009 /* STP App.app */,
+			);
+			name = Products;
 			sourceTree = "<group>";
 		};
 		A1B2C3D40000000E /* Preview Content */ = {
@@ -110,7 +110,7 @@
 				en,
 				Base,
 			);
-			mainGroup = A1B2C3D40000000B /* Root */;
+			mainGroup = A1B2C3D40000000B;
 			productRefGroup = A1B2C3D40000000D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -272,6 +272,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"STP App/Preview Content\"";
+				DEVELOPMENT_TEAM = C6YS67LPGJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "STP App needs your location to show your position on the route map, find nearby checkpoints, and track your progress.";
@@ -301,6 +302,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"STP App/Preview Content\"";
+				DEVELOPMENT_TEAM = C6YS67LPGJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "STP App needs your location to show your position on the route map, find nearby checkpoints, and track your progress.";
@@ -325,20 +327,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1B2C3D400000014 /* Build configuration list for PBXProject "STP App" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A1B2C3D400000015 /* Debug */,
-				A1B2C3D400000016 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		A1B2C3D400000010 /* Build configuration list for PBXNativeTarget "STP App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A1B2C3D400000017 /* Debug */,
 				A1B2C3D400000018 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3D400000014 /* Build configuration list for PBXProject "STP App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D400000015 /* Debug */,
+				A1B2C3D400000016 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

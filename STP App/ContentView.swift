@@ -218,9 +218,9 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         // Also start continuous updates
         locationManager.startUpdatingLocation()
 
-        // Set up 5-minute update timer for periodic updates
+        // Set up 30-second update timer for periodic updates (change to 300 for 5 minutes in production)
         updateTimer?.invalidate()
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             print("🔧 Timer triggered - requesting location update")
             self?.locationManager.requestLocation()
         }
