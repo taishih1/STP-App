@@ -302,6 +302,7 @@ struct LocationPermissionView: View {
     @ObservedObject var locationManager: LocationManager
     @Binding var hasRequestedPermission: Bool
     @State private var isRequestingPermission = false
+    @State private var permissionDenied = false
 
     var body: some View {
         VStack(spacing: 32) {
@@ -319,11 +320,13 @@ struct LocationPermissionView: View {
 
             // Title and description
             VStack(spacing: 16) {
-                Text("Enable Location")
+                Text(permissionDenied ? "Location Access Denied" : "Enable Location")
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("STP App needs your location to show your position on the route, find nearby checkpoints, and track your progress from Seattle to Portland.")
+                Text(permissionDenied ?
+                     "Location access was denied. Please enable it in Settings to use GPS features like finding nearby checkpoints." :
+                     "STP App needs your location to show your position on the route, find nearby checkpoints, and track your progress from Seattle to Portland.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -342,31 +345,63 @@ struct LocationPermissionView: View {
 
             // Buttons
             VStack(spacing: 12) {
-                Button(action: {
-                    isRequestingPermission = true
-                    locationManager.requestPermission()
-                }) {
-                    HStack {
-                        if isRequestingPermission {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .scaleEffect(0.8)
+                if permissionDenied {
+                    // Show Open Settings button if permission was denied
+                    Button(action: {
+                        if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(settingsUrl)
                         }
-                        Text(isRequestingPermission ? "Waiting for Permission..." : "Allow Location Access")
+                    }) {
+                        HStack {
+                            Image(systemName: "gear")
+                            Text("Open Settings")
+                        }
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(.blue)
+                        .cornerRadius(14)
                     }
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(isRequestingPermission ? .orange.opacity(0.7) : .orange)
-                    .cornerRadius(14)
+                } else {
+                    Button(action: {
+                        isRequestingPermission = true
+                        locationManager.requestPermission()
+
+                        // If status doesn't change within 2 seconds, permission was likely already denied
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            if locationManager.authorizationStatus == .notDetermined {
+                                // Dialog didn't appear - might have been denied before or restricted
+                                isRequestingPermission = false
+                                permissionDenied = true
+                            } else if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
+                                permissionDenied = true
+                                isRequestingPermission = false
+                            }
+                        }
+                    }) {
+                        HStack {
+                            if isRequestingPermission {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            }
+                            Text(isRequestingPermission ? "Waiting for Permission..." : "Allow Location Access")
+                        }
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(isRequestingPermission ? .orange.opacity(0.7) : .orange)
+                        .cornerRadius(14)
+                    }
+                    .disabled(isRequestingPermission)
                 }
-                .disabled(isRequestingPermission)
 
                 Button(action: {
                     hasRequestedPermission = true
                 }) {
-                    Text("Maybe Later")
+                    Text(permissionDenied ? "Continue Without GPS" : "Maybe Later")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -375,9 +410,20 @@ struct LocationPermissionView: View {
             .padding(.bottom, 48)
         }
         .background(Color(.systemBackground))
+        .onAppear {
+            // Check if permission was already denied
+            let status = locationManager.authorizationStatus
+            if status == .denied || status == .restricted {
+                permissionDenied = true
+            }
+        }
         .onChange(of: locationManager.authorizationStatus) { _, newStatus in
-            // Transition to main app once we get a definitive response
-            if newStatus != .notDetermined {
+            print("🔧 Permission view saw status change: \(newStatus.rawValue)")
+            if newStatus == .denied || newStatus == .restricted {
+                permissionDenied = true
+                isRequestingPermission = false
+            } else if newStatus == .authorizedWhenInUse || newStatus == .authorizedAlways {
+                // Permission granted - transition to main app
                 hasRequestedPermission = true
             }
         }
