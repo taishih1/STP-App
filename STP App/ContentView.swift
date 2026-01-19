@@ -546,77 +546,14 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Ride Progress Card
-                    VStack(spacing: 16) {
-                        HStack {
-                            Text("Seattle to Portland")
-                                .font(.headline)
-                            Spacer()
-                            Text("Day 1")
-                                .font(.subheadline)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 4)
-                                .background(.orange.opacity(0.2))
-                                .foregroundStyle(.orange)
-                                .cornerRadius(12)
-                        }
-
-                        // Progress Bar
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("68.5 mi")
-                                    .font(.title)
-                                    .fontWeight(.bold)
-                                Text("/ 206 mi")
-                                    .font(.title3)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text("33%")
-                                    .font(.headline)
-                                    .foregroundStyle(.orange)
-                            }
-
-                            GeometryReader { geometry in
-                                ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color(.systemGray5))
-                                        .frame(height: 12)
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(.orange)
-                                        .frame(width: geometry.size.width * 0.33, height: 12)
-                                }
-                            }
-                            .frame(height: 12)
-
-                            HStack {
-                                Image(systemName: "mappin.circle.fill")
-                                    .foregroundStyle(.green)
-                                Text("Seattle")
-                                    .font(.caption)
-                                Spacer()
-                                Text("Portland")
-                                    .font(.caption)
-                                Image(systemName: "flag.checkered")
-                                    .foregroundStyle(.orange)
-                            }
-                            .foregroundStyle(.secondary)
-                        }
+                    // Nearest Stop Card
+                    if let nearest = nearestCheckpoints.first {
+                        StatusCard(icon: "location.fill", title: "Nearest Stop", value: nearest.checkpoint.name.components(separatedBy: " - ").last ?? nearest.checkpoint.name, subvalue: String(format: "%.1f mi away", nearest.distance), color: .blue)
+                            .padding(.horizontal)
+                    } else {
+                        StatusCard(icon: "location.fill", title: "Nearest Stop", value: "Loading...", subvalue: "Enable GPS", color: .blue)
+                            .padding(.horizontal)
                     }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(16)
-                    .padding(.horizontal)
-
-                    // Current Status
-                    HStack(spacing: 12) {
-                        if let nearest = nearestCheckpoints.first {
-                            StatusCard(icon: "location.fill", title: "Nearest Stop", value: nearest.checkpoint.name.components(separatedBy: " - ").last ?? nearest.checkpoint.name, subvalue: String(format: "%.1f mi away", nearest.distance), color: .blue)
-                        } else {
-                            StatusCard(icon: "location.fill", title: "Nearest Stop", value: "Loading...", subvalue: "Enable GPS", color: .blue)
-                        }
-                        StatusCard(icon: "clock.fill", title: "Ride Time", value: "4:32:15", subvalue: "Moving", color: .green)
-                    }
-                    .padding(.horizontal)
 
                     // Weather & Conditions
                     HStack(spacing: 12) {
