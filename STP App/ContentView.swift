@@ -187,6 +187,7 @@ class CheckpointAnnotation: NSObject, MKAnnotation {
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let locationManager = CLLocationManager()
     private var updateTimer: Timer?
+    private var isGettingInitialLocation = true
 
     @Published var userLocation: CLLocationCoordinate2D?
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
@@ -196,19 +197,26 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.distanceFilter = 10 // Update when moved 10 meters
         authorizationStatus = locationManager.authorizationStatus
+        print("🔧 LocationManager initialized, status: \(authorizationStatus.rawValue)")
     }
 
     func requestPermission() {
+        print("🔧 Requesting location permission...")
         locationManager.requestWhenInUseAuthorization()
     }
 
     func startTracking() {
+        print("🔧 Starting location tracking...")
+        isGettingInitialLocation = true
         locationManager.startUpdatingLocation()
-        // Set up 5-minute update timer
+
+        // Set up 5-minute update timer for periodic updates
         updateTimer?.invalidate()
         updateTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            self?.locationManager.startUpdatingLocation()
+            print("🔧 Timer triggered - requesting location update")
+            self?.locationManager.requestLocation()
         }
     }
 
@@ -220,8 +228,12 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
-        userLocation = location.coordinate
-        lastUpdated = Date()
+
+        // Update on main thread to ensure UI updates
+        DispatchQueue.main.async { [weak self] in
+            self?.userLocation = location.coordinate
+            self?.lastUpdated = Date()
+        }
 
         // Print location to console for debugging
         print("📍 GPS Location Updated:")
@@ -230,19 +242,37 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         print("   Accuracy: \(location.horizontalAccuracy)m")
         print("   Time: \(Date())")
 
-        // Stop continuous updates to save battery, will resume on next timer tick
-        locationManager.stopUpdatingLocation()
+        // After getting initial location, stop continuous updates to save battery
+        if isGettingInitialLocation {
+            isGettingInitialLocation = false
+            // Keep updating for a few more seconds to get accurate location
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                print("🔧 Stopping continuous updates, switching to timer-based updates")
+                self?.locationManager.stopUpdatingLocation()
+            }
+        }
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        authorizationStatus = manager.authorizationStatus
-        if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
-            startTracking()
+        DispatchQueue.main.async { [weak self] in
+            self?.authorizationStatus = manager.authorizationStatus
+            print("🔧 Authorization changed to: \(manager.authorizationStatus.rawValue)")
+
+            if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
+                print("🔧 Permission granted - starting tracking")
+                self?.startTracking()
+            }
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Location error: \(error.localizedDescription)")
+        print("❌ Location error: \(error.localizedDescription)")
+
+        // If location unknown, try again
+        if let clError = error as? CLError, clError.code == .locationUnknown {
+            print("🔧 Location unknown, retrying...")
+            locationManager.startUpdatingLocation()
+        }
     }
 }
 
@@ -271,6 +301,7 @@ struct ContentView: View {
 struct LocationPermissionView: View {
     @ObservedObject var locationManager: LocationManager
     @Binding var hasRequestedPermission: Bool
+    @State private var isRequestingPermission = false
 
     var body: some View {
         VStack(spacing: 32) {
@@ -312,17 +343,25 @@ struct LocationPermissionView: View {
             // Buttons
             VStack(spacing: 12) {
                 Button(action: {
+                    isRequestingPermission = true
                     locationManager.requestPermission()
-                    hasRequestedPermission = true
                 }) {
-                    Text("Allow Location Access")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(.orange)
-                        .cornerRadius(14)
+                    HStack {
+                        if isRequestingPermission {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                        }
+                        Text(isRequestingPermission ? "Waiting for Permission..." : "Allow Location Access")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isRequestingPermission ? .orange.opacity(0.7) : .orange)
+                    .cornerRadius(14)
                 }
+                .disabled(isRequestingPermission)
 
                 Button(action: {
                     hasRequestedPermission = true
@@ -336,6 +375,12 @@ struct LocationPermissionView: View {
             .padding(.bottom, 48)
         }
         .background(Color(.systemBackground))
+        .onChange(of: locationManager.authorizationStatus) { _, newStatus in
+            // Transition to main app once we get a definitive response
+            if newStatus != .notDetermined {
+                hasRequestedPermission = true
+            }
+        }
     }
 }
 
