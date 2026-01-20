@@ -678,7 +678,7 @@ struct MainAppView: View {
         }
         .onAppear {
             // Set up checkpoints for location-based notifications
-            locationManager.checkpoints = STPCheckpoint.allCheckpoints
+            locationManager.checkpoints = stpCheckpoints
             locationManager.checkpointAlertsEnabled = UserProfileManager.shared.checkpointAlerts
 
             // Request notification permission if alerts are enabled
