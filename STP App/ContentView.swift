@@ -272,7 +272,7 @@ class NotificationManager: ObservableObject {
     static let shared = NotificationManager()
 
     @Published var isAuthorized = false
-    private var notifiedCheckpoints: Set<String> = [] // Track which checkpoints we've notified about
+    private var notifiedCheckpoints: Set<UUID> = [] // Track which checkpoints we've notified about
 
     func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
