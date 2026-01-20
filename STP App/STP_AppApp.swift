@@ -26,16 +26,14 @@ struct LaunchVideoView: View {
     @StateObject private var playerViewModel = VideoPlayerViewModel()
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // Background that matches video or app theme
-                Color(red: 0.98, green: 0.98, blue: 0.98)
-                    .ignoresSafeArea()
+        ZStack {
+            // Background matches video edges - adjust this color to match your video
+            Color.white
+                .ignoresSafeArea()
 
-                // Video player fills the screen
-                VideoPlayerRepresentable(player: playerViewModel.player)
-                    .ignoresSafeArea()
-            }
+            // Video centered, shows full content
+            VideoPlayerRepresentable(player: playerViewModel.player)
+                .ignoresSafeArea()
         }
         .onAppear {
             playerViewModel.onVideoEnd = {
@@ -107,7 +105,9 @@ class PlayerContainerView: UIView {
         playerLayer = AVPlayerLayer(player: player)
         super.init(frame: .zero)
 
-        playerLayer.videoGravity = .resizeAspectFill
+        backgroundColor = .white
+        playerLayer.videoGravity = .resizeAspect
+        playerLayer.backgroundColor = UIColor.white.cgColor
         layer.addSublayer(playerLayer)
     }
 
