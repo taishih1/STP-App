@@ -9,12 +9,13 @@ struct STP_AppApp: App {
         WindowGroup {
             ZStack {
                 ContentView()
+                    .opacity(showLaunchScreen ? 0 : 1)
 
                 if showLaunchScreen {
                     LaunchVideoView(isPresented: $showLaunchScreen)
-                        .transition(.opacity)
                 }
             }
+            .animation(.easeInOut(duration: 0.4), value: showLaunchScreen)
         }
     }
 }
@@ -22,92 +23,91 @@ struct STP_AppApp: App {
 // MARK: - Launch Video View
 struct LaunchVideoView: View {
     @Binding var isPresented: Bool
-    @State private var player: AVPlayer?
+    @StateObject private var playerViewModel = VideoPlayerViewModel()
 
     var body: some View {
-        ZStack {
-            // Clean white background
-            Color.white.ignoresSafeArea()
+        GeometryReader { geometry in
+            ZStack {
+                // Background that matches video or app theme
+                Color(red: 0.98, green: 0.98, blue: 0.98)
+                    .ignoresSafeArea()
 
-            VStack {
-                Spacer()
-
-                if let player = player {
-                    VideoPlayerView(player: player)
-                        .frame(maxWidth: .infinity)
-                        .aspectRatio(contentMode: .fit)
-                } else {
-                    // Minimal loading state
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                        .scaleEffect(1.2)
-                }
-
-                Spacer()
+                // Video player fills the screen
+                VideoPlayerRepresentable(player: playerViewModel.player)
+                    .ignoresSafeArea()
             }
         }
         .onAppear {
-            setupAndPlayVideo()
+            playerViewModel.onVideoEnd = {
+                isPresented = false
+            }
+            playerViewModel.play()
         }
-        .onDisappear {
-            player?.pause()
-            player = nil
+    }
+}
+
+// MARK: - Video Player ViewModel
+class VideoPlayerViewModel: ObservableObject {
+    let player: AVPlayer
+    var onVideoEnd: (() -> Void)?
+    private var observer: Any?
+
+    init() {
+        if let url = Bundle.main.url(forResource: "STP_movie_3", withExtension: "mp4") {
+            self.player = AVPlayer(url: url)
+            self.player.isMuted = false
+            setupObserver()
+        } else {
+            print("❌ Video file not found in bundle")
+            self.player = AVPlayer()
+            // Auto-dismiss if no video
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.onVideoEnd?()
+            }
         }
     }
 
-    private func setupAndPlayVideo() {
-        guard let url = Bundle.main.url(forResource: "STP_movie_3", withExtension: "mp4") else {
-            print("Video file not found")
-            // If video not found, dismiss after brief delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                withAnimation {
-                    isPresented = false
-                }
-            }
-            return
-        }
-
-        let avPlayer = AVPlayer(url: url)
-        self.player = avPlayer
-
-        // Observe when video ends
-        NotificationCenter.default.addObserver(
+    private func setupObserver() {
+        observer = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
-            object: avPlayer.currentItem,
+            object: player.currentItem,
             queue: .main
-        ) { _ in
-            withAnimation(.easeOut(duration: 0.5)) {
-                isPresented = false
-            }
+        ) { [weak self] _ in
+            self?.onVideoEnd?()
         }
+    }
 
-        // Start playing
-        avPlayer.play()
+    func play() {
+        player.seek(to: .zero)
+        player.play()
+    }
+
+    deinit {
+        if let observer = observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 }
 
 // MARK: - Video Player UIViewRepresentable
-struct VideoPlayerView: UIViewRepresentable {
+struct VideoPlayerRepresentable: UIViewRepresentable {
     let player: AVPlayer
 
-    func makeUIView(context: Context) -> UIView {
-        let view = PlayerUIView(player: player)
-        return view
+    func makeUIView(context: Context) -> PlayerContainerView {
+        return PlayerContainerView(player: player)
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: PlayerContainerView, context: Context) {}
 }
 
-class PlayerUIView: UIView {
+class PlayerContainerView: UIView {
     private var playerLayer: AVPlayerLayer
 
     init(player: AVPlayer) {
         playerLayer = AVPlayerLayer(player: player)
         super.init(frame: .zero)
 
-        backgroundColor = .white
-        playerLayer.videoGravity = .resizeAspect
-        playerLayer.backgroundColor = UIColor.white.cgColor
+        playerLayer.videoGravity = .resizeAspectFill
         layer.addSublayer(playerLayer)
     }
 
