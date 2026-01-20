@@ -3418,6 +3418,14 @@ struct SettingsTabView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+
+                    Toggle("Weather Alerts", isOn: $userProfile.weatherAlerts)
+
+                    if userProfile.weatherAlerts {
+                        Text("Coming soon - get alerts for rain or severe weather on the route.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .onChange(of: userProfile.checkpointAlerts) { _, newValue in
                     locationManager.checkpointAlertsEnabled = newValue
