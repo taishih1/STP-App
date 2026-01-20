@@ -26,11 +26,38 @@ struct LaunchVideoView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // Orange gradient background (matches app icon)
+            LinearGradient(
+                colors: [Color(red: 0.91, green: 0.36, blue: 0.02), Color(red: 0.96, green: 0.55, blue: 0.04)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
 
-            if let player = player {
-                VideoPlayerView(player: player)
-                    .ignoresSafeArea()
+            VStack(spacing: 30) {
+                if let player = player {
+                    VideoPlayerView(player: player)
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .shadow(radius: 20)
+                        .padding(.horizontal, 20)
+                } else {
+                    // Loading state - show app branding
+                    VStack(spacing: 20) {
+                        Image(systemName: "bicycle")
+                            .font(.system(size: 80, weight: .bold))
+                            .foregroundStyle(.white)
+
+                        Text("STP 2026")
+                            .font(.system(size: 36, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.5)
+                    }
+                }
             }
         }
         .onAppear {
@@ -92,7 +119,7 @@ class PlayerUIView: UIView {
         playerLayer = AVPlayerLayer(player: player)
         super.init(frame: .zero)
 
-        playerLayer.videoGravity = .resizeAspectFill
+        playerLayer.videoGravity = .resizeAspect
         layer.addSublayer(playerLayer)
     }
 
