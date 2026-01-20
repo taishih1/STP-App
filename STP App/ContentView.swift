@@ -128,6 +128,29 @@ class UserProfileManager: ObservableObject {
             profileImage = image
         }
     }
+
+    // Distance formatting helpers
+    func formatDistance(_ miles: Double) -> String {
+        if distanceUnit == "Kilometers" {
+            let km = miles * 1.60934
+            return String(format: "%.1f km", km)
+        } else {
+            return String(format: "%.1f mi", miles)
+        }
+    }
+
+    func formatDistanceInt(_ miles: Int) -> String {
+        if distanceUnit == "Kilometers" {
+            let km = Double(miles) * 1.60934
+            return "\(Int(km)) km"
+        } else {
+            return "\(miles) mi"
+        }
+    }
+
+    var distanceAbbrev: String {
+        distanceUnit == "Kilometers" ? "km" : "mi"
+    }
 }
 
 // MARK: - Route Map View (with polyline)
@@ -313,7 +336,7 @@ class NotificationManager: ObservableObject {
     private func sendCheckpointNotification(checkpoint: STPCheckpoint, distance: Double) {
         let content = UNMutableNotificationContent()
         content.title = "Checkpoint Ahead!"
-        content.body = "\(checkpoint.name) is \(String(format: "%.1f", distance)) miles away"
+        content.body = "\(checkpoint.name) is \(UserProfileManager.shared.formatDistance(distance)) away"
         content.sound = .default
 
         let request = UNNotificationRequest(
@@ -731,7 +754,7 @@ struct HomeView: View {
                 VStack(spacing: 20) {
                     // Nearest Stop Card
                     if let nearest = nearestCheckpoints.first {
-                        StatusCard(icon: "location.fill", title: "Nearest Stop", value: nearest.checkpoint.name.components(separatedBy: " - ").last ?? nearest.checkpoint.name, subvalue: String(format: "%.1f mi away", nearest.distance), color: .blue)
+                        StatusCard(icon: "location.fill", title: "Nearest Stop", value: nearest.checkpoint.name.components(separatedBy: " - ").last ?? nearest.checkpoint.name, subvalue: "\(userProfile.formatDistance(nearest.distance)) away", color: .blue)
                             .padding(.horizontal)
                     } else {
                         StatusCard(icon: "location.fill", title: "Nearest Stop", value: "Loading...", subvalue: "Enable GPS", color: .blue)
@@ -946,7 +969,7 @@ struct NearestStopRow: View {
                                 .cornerRadius(4)
                         }
                     }
-                    Text("Mile \(Int(checkpoint.mile))")
+                    Text(UserProfileManager.shared.formatDistanceInt(Int(checkpoint.mile)))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -954,12 +977,9 @@ struct NearestStopRow: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(String(format: "%.1f", distance))
+                    Text(UserProfileManager.shared.formatDistance(distance))
                         .font(.headline)
                         .foregroundStyle(isNearest ? .green : .primary)
-                    Text("miles")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
 
                 Image(systemName: "chevron.right")
@@ -1456,7 +1476,7 @@ struct RouteView: View {
 
                     // Route Stats
                     HStack(spacing: 12) {
-                        RouteStatCard(title: "Total Distance", value: "206 mi", icon: "arrow.left.and.right")
+                        RouteStatCard(title: "Total Distance", value: UserProfileManager.shared.formatDistanceInt(206), icon: "arrow.left.and.right")
                         RouteStatCard(title: "Elevation Gain", value: "4,800 ft", icon: "mountain.2.fill")
                     }
                     .padding(.horizontal)
@@ -1642,7 +1662,7 @@ struct STPCheckpointRow: View {
                                         .font(.caption2)
                                         .fontWeight(.bold)
                                     if let distance = distanceMiles {
-                                        Text("• \(String(format: "%.1f", distance)) mi away")
+                                        Text("• \(UserProfileManager.shared.formatDistance(distance)) away")
                                             .font(.caption2)
                                             .fontWeight(.medium)
                                     }
@@ -1651,7 +1671,7 @@ struct STPCheckpointRow: View {
                             }
                         }
                         Spacer()
-                        Text("Mile \(Int(checkpoint.mile))")
+                        Text(UserProfileManager.shared.formatDistanceInt(Int(checkpoint.mile)))
                             .font(.caption)
                             .fontWeight(.medium)
                             .padding(.horizontal, 8)
@@ -1894,12 +1914,12 @@ struct CheckpointDetailView: View {
                         HStack(spacing: 16) {
                             DistanceCard(
                                 label: "From Start",
-                                value: "\(Int(checkpoint.mile)) mi",
+                                value: UserProfileManager.shared.formatDistanceInt(Int(checkpoint.mile)),
                                 icon: "flag.fill"
                             )
                             DistanceCard(
                                 label: "To Finish",
-                                value: "\(206 - Int(checkpoint.mile)) mi",
+                                value: UserProfileManager.shared.formatDistanceInt(206 - Int(checkpoint.mile)),
                                 icon: "flag.checkered"
                             )
                         }
