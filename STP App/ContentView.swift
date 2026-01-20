@@ -3,6 +3,86 @@ import PhotosUI
 import MapKit
 import CoreLocation
 
+// MARK: - App Icon Generator
+struct AppIconView: View {
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            // Orange gradient background
+            LinearGradient(
+                colors: [Color(red: 1.0, green: 0.6, blue: 0.2), Color(red: 1.0, green: 0.4, blue: 0.1)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            // Route line decoration
+            Path { path in
+                path.move(to: CGPoint(x: size * 0.1, y: size * 0.7))
+                path.addCurve(
+                    to: CGPoint(x: size * 0.9, y: size * 0.3),
+                    control1: CGPoint(x: size * 0.3, y: size * 0.5),
+                    control2: CGPoint(x: size * 0.7, y: size * 0.5)
+                )
+            }
+            .stroke(Color.white.opacity(0.3), lineWidth: size * 0.04)
+
+            VStack(spacing: size * 0.02) {
+                // Bicycle icon
+                Image(systemName: "bicycle")
+                    .font(.system(size: size * 0.28, weight: .bold))
+                    .foregroundStyle(.white)
+
+                // STP text
+                Text("STP")
+                    .font(.system(size: size * 0.22, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+
+                // Year
+                Text("2026")
+                    .font(.system(size: size * 0.08, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+
+            // Location pins decoration
+            VStack {
+                HStack {
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.system(size: size * 0.06))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Spacer()
+                }
+                Spacer()
+                HStack {
+                    Spacer()
+                    Image(systemName: "flag.checkered")
+                        .font(.system(size: size * 0.06))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+            .padding(size * 0.08)
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.2))
+    }
+
+    @MainActor
+    func generateIcon() -> UIImage? {
+        let renderer = ImageRenderer(content: self)
+        renderer.scale = 1.0
+        return renderer.uiImage
+    }
+}
+
+// Function to save app icon to photo library
+func saveAppIcon() {
+    let iconView = AppIconView(size: 1024)
+    if let image = iconView.generateIcon() {
+        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+        print("✅ App icon saved to photo library!")
+    }
+}
+
 // MARK: - User Profile Model
 class UserProfileManager: ObservableObject {
     static let shared = UserProfileManager()
@@ -3221,6 +3301,27 @@ struct SettingsView: View {
                                 .foregroundStyle(.primary)
                         }
                     }
+                }
+
+                Section("Developer") {
+                    Button(action: {
+                        saveAppIcon()
+                    }) {
+                        HStack {
+                            Image(systemName: "app.badge.fill")
+                                .foregroundStyle(.orange)
+                            Text("Export App Icon to Photos")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
+                    // Preview of the app icon
+                    HStack {
+                        Spacer()
+                        AppIconView(size: 100)
+                        Spacer()
+                    }
+                    .listRowBackground(Color.clear)
                 }
             }
             .navigationTitle("Settings")
