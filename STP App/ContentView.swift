@@ -572,6 +572,12 @@ struct MainAppView: View {
                     Image(systemName: "text.bubble.fill")
                     Text("Feed")
                 }
+
+            SettingsTabView(userProfile: userProfile)
+                .tabItem {
+                    Image(systemName: "gearshape.fill")
+                    Text("Settings")
+                }
         }
         .tint(.orange)
         .sheet(isPresented: $showingProfile) {
@@ -3237,7 +3243,93 @@ struct NotificationsSettingsView: View {
     }
 }
 
-// MARK: - Settings View
+// MARK: - Settings Tab View (for bottom tab bar)
+struct SettingsTabView: View {
+    @ObservedObject var userProfile: UserProfileManager
+
+    let distanceUnits = ["Miles", "Kilometers"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Display") {
+                    Picker("Distance Unit", selection: $userProfile.distanceUnit) {
+                        ForEach(distanceUnits, id: \.self) { unit in
+                            Text(unit).tag(unit)
+                        }
+                    }
+
+                    Toggle("Dark Mode", isOn: $userProfile.darkMode)
+                }
+
+                Section("Notifications") {
+                    Toggle("Push Notifications", isOn: $userProfile.notificationsEnabled)
+                    Toggle("Checkpoint Alerts", isOn: $userProfile.checkpointAlerts)
+                    Toggle("Weather Alerts", isOn: $userProfile.weatherAlerts)
+                }
+
+                Section("Data") {
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundStyle(.blue)
+                            Text("Export Ride Data")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Sync with Health App")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
+
+                Section("About") {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text("1.0.0")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Link(destination: URL(string: "https://cascade.org/stp")!) {
+                        HStack {
+                            Image(systemName: "globe")
+                                .foregroundStyle(.blue)
+                            Text("STP Website")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "doc.text.fill")
+                                .foregroundStyle(.gray)
+                            Text("Privacy Policy")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "doc.text.fill")
+                                .foregroundStyle(.gray)
+                            Text("Terms of Service")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+        }
+    }
+}
+
+// MARK: - Settings View (for sheet presentation)
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var userProfile: UserProfileManager
