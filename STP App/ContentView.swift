@@ -101,6 +101,8 @@ class UserProfileManager: ObservableObject {
     @AppStorage("friendUpdates") var friendUpdates: Bool = false
     @AppStorage("distanceUnit") var distanceUnit: String = "Miles"
     @AppStorage("darkMode") var darkMode: Bool = false
+    @AppStorage("gpsUpdateInterval") var gpsUpdateInterval: Int = 300 // 5 minutes default (in seconds)
+    @AppStorage("riderType") var riderType: String = "Two-Day"
 
     @Published var profileImage: UIImage? = nil
 
@@ -274,6 +276,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var lastUpdated: Date?
 
+    var updateInterval: TimeInterval = 300 // Default 5 minutes
+
     override init() {
         super.init()
         locationManager.delegate = self
@@ -289,7 +293,13 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
 
     func startTracking() {
-        print("🔧 Starting location tracking...")
+        guard updateInterval > 0 else {
+            print("🔧 GPS is disabled (interval = 0)")
+            stopTracking()
+            return
+        }
+
+        print("🔧 Starting location tracking with interval: \(updateInterval)s")
         print("🔧 Current authorization: \(locationManager.authorizationStatus.rawValue)")
         isGettingInitialLocation = true
 
@@ -299,15 +309,16 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         // Also start continuous updates
         locationManager.startUpdatingLocation()
 
-        // Set up 5-minute update timer for periodic updates
+        // Set up update timer for periodic updates
         updateTimer?.invalidate()
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        updateTimer = Timer.scheduledTimer(withTimeInterval: updateInterval, repeats: true) { [weak self] _ in
             print("🔧 Timer triggered - requesting location update")
             self?.locationManager.requestLocation()
         }
     }
 
     func stopTracking() {
+        print("🔧 Stopping location tracking")
         locationManager.stopUpdatingLocation()
         updateTimer?.invalidate()
         updateTimer = nil
@@ -3246,12 +3257,58 @@ struct NotificationsSettingsView: View {
 // MARK: - Settings Tab View (for bottom tab bar)
 struct SettingsTabView: View {
     @ObservedObject var userProfile: UserProfileManager
+    @EnvironmentObject var locationManager: LocationManager
 
     let distanceUnits = ["Miles", "Kilometers"]
+    let riderTypes = ["One-Day", "Two-Day"]
+    let gpsOptions: [(String, Int)] = [
+        ("Off", 0),
+        ("Every 30 seconds", 30),
+        ("Every 1 minute", 60),
+        ("Every 5 minutes", 300),
+        ("Every 10 minutes", 600)
+    ]
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Ride Type") {
+                    Picker("Rider Type", selection: $userProfile.riderType) {
+                        ForEach(riderTypes, id: \.self) { type in
+                            Text(type).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if userProfile.riderType == "One-Day" {
+                        Text("You're riding Seattle to Portland in one day! All checkpoints shown.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("You're riding over two days with an overnight stop in Centralia.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("GPS Location") {
+                    Picker("Update Frequency", selection: $userProfile.gpsUpdateInterval) {
+                        ForEach(gpsOptions, id: \.1) { option in
+                            Text(option.0).tag(option.1)
+                        }
+                    }
+
+                    if userProfile.gpsUpdateInterval == 0 {
+                        Text("GPS is disabled. Nearest stop features won't work.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("GPS updates every \(gpsIntervalText). Uses battery.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("Display") {
                     Picker("Distance Unit", selection: $userProfile.distanceUnit) {
                         ForEach(distanceUnits, id: \.self) { unit in
@@ -3266,26 +3323,6 @@ struct SettingsTabView: View {
                     Toggle("Push Notifications", isOn: $userProfile.notificationsEnabled)
                     Toggle("Checkpoint Alerts", isOn: $userProfile.checkpointAlerts)
                     Toggle("Weather Alerts", isOn: $userProfile.weatherAlerts)
-                }
-
-                Section("Data") {
-                    Button(action: {}) {
-                        HStack {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .foregroundStyle(.blue)
-                            Text("Export Ride Data")
-                                .foregroundStyle(.primary)
-                        }
-                    }
-
-                    Button(action: {}) {
-                        HStack {
-                            Image(systemName: "arrow.clockwise.circle.fill")
-                                .foregroundStyle(.green)
-                            Text("Sync with Health App")
-                                .foregroundStyle(.primary)
-                        }
-                    }
                 }
 
                 Section("About") {
@@ -3325,6 +3362,25 @@ struct SettingsTabView: View {
                 }
             }
             .navigationTitle("Settings")
+        }
+        .onChange(of: userProfile.gpsUpdateInterval) { _, newValue in
+            // Update location manager when GPS setting changes
+            if newValue == 0 {
+                locationManager.stopTracking()
+            } else {
+                locationManager.updateInterval = TimeInterval(newValue)
+                locationManager.startTracking()
+            }
+        }
+    }
+
+    var gpsIntervalText: String {
+        switch userProfile.gpsUpdateInterval {
+        case 30: return "30 seconds"
+        case 60: return "1 minute"
+        case 300: return "5 minutes"
+        case 600: return "10 minutes"
+        default: return "\(userProfile.gpsUpdateInterval) seconds"
         }
     }
 }
