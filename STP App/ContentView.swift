@@ -75,6 +75,7 @@ struct AppIconView: View {
 }
 
 // Function to save app icon to photo library
+@MainActor
 func saveAppIcon() {
     let iconView = AppIconView(size: 1024)
     if let image = iconView.generateIcon() {
