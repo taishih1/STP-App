@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import MapKit
 import CoreLocation
+import UserNotifications
 
 // MARK: - App Icon Generator
 struct AppIconView: View {
@@ -266,17 +267,89 @@ class CheckpointAnnotation: NSObject, MKAnnotation {
     }
 }
 
+// MARK: - Notification Manager
+class NotificationManager: ObservableObject {
+    static let shared = NotificationManager()
+
+    @Published var isAuthorized = false
+    private var notifiedCheckpoints: Set<String> = [] // Track which checkpoints we've notified about
+
+    func requestPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            DispatchQueue.main.async {
+                self.isAuthorized = granted
+                if granted {
+                    print("✅ Notification permission granted")
+                } else {
+                    print("❌ Notification permission denied")
+                }
+            }
+        }
+    }
+
+    func checkProximityAndNotify(userLocation: CLLocationCoordinate2D, checkpoints: [STPCheckpoint], alertsEnabled: Bool) {
+        guard alertsEnabled else { return }
+
+        let userCL = CLLocation(latitude: userLocation.latitude, longitude: userLocation.longitude)
+
+        for checkpoint in checkpoints {
+            let checkpointLocation = CLLocation(latitude: checkpoint.latitude, longitude: checkpoint.longitude)
+            let distanceMeters = userCL.distance(from: checkpointLocation)
+            let distanceMiles = distanceMeters / 1609.34
+
+            // Alert when within 1 mile and haven't already notified for this checkpoint
+            if distanceMiles <= 1.0 && !notifiedCheckpoints.contains(checkpoint.id) {
+                sendCheckpointNotification(checkpoint: checkpoint, distance: distanceMiles)
+                notifiedCheckpoints.insert(checkpoint.id)
+            }
+
+            // Reset notification if user moves away (more than 3 miles)
+            if distanceMiles > 3.0 && notifiedCheckpoints.contains(checkpoint.id) {
+                notifiedCheckpoints.remove(checkpoint.id)
+            }
+        }
+    }
+
+    private func sendCheckpointNotification(checkpoint: STPCheckpoint, distance: Double) {
+        let content = UNMutableNotificationContent()
+        content.title = "Checkpoint Ahead!"
+        content.body = "\(checkpoint.name) is \(String(format: "%.1f", distance)) miles away"
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "checkpoint-\(checkpoint.id)",
+            content: content,
+            trigger: nil // Send immediately
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("❌ Notification error: \(error)")
+            } else {
+                print("📍 Sent notification for \(checkpoint.name)")
+            }
+        }
+    }
+
+    func resetNotifications() {
+        notifiedCheckpoints.removeAll()
+    }
+}
+
 // MARK: - Location Manager
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let locationManager = CLLocationManager()
     private var updateTimer: Timer?
     private var isGettingInitialLocation = true
+    private let notificationManager = NotificationManager.shared
 
     @Published var userLocation: CLLocationCoordinate2D?
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var lastUpdated: Date?
 
     var updateInterval: TimeInterval = 300 // Default 5 minutes
+    var checkpoints: [STPCheckpoint] = []
+    var checkpointAlertsEnabled: Bool = true
 
     override init() {
         super.init()
@@ -331,6 +404,15 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.userLocation = location.coordinate
             self?.lastUpdated = Date()
+
+            // Check for nearby checkpoints and send notifications
+            if let self = self, !self.checkpoints.isEmpty {
+                self.notificationManager.checkProximityAndNotify(
+                    userLocation: location.coordinate,
+                    checkpoints: self.checkpoints,
+                    alertsEnabled: self.checkpointAlertsEnabled
+                )
+            }
         }
 
         // Print location to console for debugging
@@ -595,6 +677,15 @@ struct MainAppView: View {
             ProfileView(userProfile: userProfile)
         }
         .onAppear {
+            // Set up checkpoints for location-based notifications
+            locationManager.checkpoints = STPCheckpoint.allCheckpoints
+            locationManager.checkpointAlertsEnabled = UserProfileManager.shared.checkpointAlerts
+
+            // Request notification permission if alerts are enabled
+            if UserProfileManager.shared.checkpointAlerts {
+                NotificationManager.shared.requestPermission()
+            }
+
             // Start tracking if permission already granted
             if locationManager.authorizationStatus == .authorizedWhenInUse ||
                locationManager.authorizationStatus == .authorizedAlways {
@@ -3320,9 +3411,19 @@ struct SettingsTabView: View {
                 }
 
                 Section("Notifications") {
-                    Toggle("Push Notifications", isOn: $userProfile.notificationsEnabled)
                     Toggle("Checkpoint Alerts", isOn: $userProfile.checkpointAlerts)
-                    Toggle("Weather Alerts", isOn: $userProfile.weatherAlerts)
+
+                    if userProfile.checkpointAlerts {
+                        Text("You'll get notified when you're within 1 mile of a checkpoint.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onChange(of: userProfile.checkpointAlerts) { _, newValue in
+                    locationManager.checkpointAlertsEnabled = newValue
+                    if newValue {
+                        NotificationManager.shared.requestPermission()
+                    }
                 }
 
                 Section("About") {
