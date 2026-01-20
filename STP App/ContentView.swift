@@ -3247,6 +3247,27 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // App Icon Preview at top
+                Section {
+                    VStack(spacing: 12) {
+                        AppIconView(size: 120)
+                        Text("STP App Icon")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button(action: {
+                            saveAppIcon()
+                        }) {
+                            Label("Export to Photos", systemImage: "square.and.arrow.down")
+                                .font(.subheadline)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .listRowBackground(Color.clear)
+
                 Section("Display") {
                     Picker("Distance Unit", selection: $userProfile.distanceUnit) {
                         ForEach(distanceUnits, id: \.self) { unit in
@@ -3304,26 +3325,6 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Developer") {
-                    Button(action: {
-                        saveAppIcon()
-                    }) {
-                        HStack {
-                            Image(systemName: "app.badge.fill")
-                                .foregroundStyle(.orange)
-                            Text("Export App Icon to Photos")
-                                .foregroundStyle(.primary)
-                        }
-                    }
-
-                    // Preview of the app icon
-                    HStack {
-                        Spacer()
-                        AppIconView(size: 100)
-                        Spacer()
-                    }
-                    .listRowBackground(Color.clear)
-                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
