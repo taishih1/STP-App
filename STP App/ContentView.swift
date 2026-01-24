@@ -704,14 +704,18 @@ struct MainAppView: View {
             locationManager.checkpoints = stpCheckpoints
             locationManager.checkpointAlertsEnabled = UserProfileManager.shared.checkpointAlerts
 
+            // Load GPS update interval from settings
+            locationManager.updateInterval = TimeInterval(UserProfileManager.shared.gpsUpdateInterval)
+
             // Request notification permission if alerts are enabled
             if UserProfileManager.shared.checkpointAlerts {
                 NotificationManager.shared.requestPermission()
             }
 
-            // Start tracking if permission already granted
+            // Start tracking immediately if permission already granted
             if locationManager.authorizationStatus == .authorizedWhenInUse ||
                locationManager.authorizationStatus == .authorizedAlways {
+                // Request immediate location update
                 locationManager.startTracking()
             }
         }
