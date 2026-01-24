@@ -401,13 +401,20 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
         locationManager.distanceFilter = 10 // Update when moved 10 meters
+        locationManager.allowsBackgroundLocationUpdates = true
+        locationManager.pausesLocationUpdatesAutomatically = false
         authorizationStatus = locationManager.authorizationStatus
         print("🔧 LocationManager initialized, status: \(authorizationStatus.rawValue)")
     }
 
     func requestPermission() {
         print("🔧 Requesting location permission...")
-        locationManager.requestWhenInUseAuthorization()
+        // First request "When In Use", then upgrade to "Always"
+        if locationManager.authorizationStatus == .notDetermined {
+            locationManager.requestWhenInUseAuthorization()
+        } else if locationManager.authorizationStatus == .authorizedWhenInUse {
+            locationManager.requestAlwaysAuthorization()
+        }
     }
 
     func startTracking() {
@@ -467,13 +474,19 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         print("   Accuracy: \(location.horizontalAccuracy)m")
         print("   Time: \(Date())")
 
-        // After getting initial location, stop continuous updates to save battery
+        // After getting initial location, switch to significant location changes for battery
         if isGettingInitialLocation {
             isGettingInitialLocation = false
-            // Keep updating for a few more seconds to get accurate location
+            // For background mode, keep updates running but reduce frequency
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                print("🔧 Stopping continuous updates, switching to timer-based updates")
-                self?.locationManager.stopUpdatingLocation()
+                guard let self = self else { return }
+                if self.locationManager.authorizationStatus == .authorizedAlways {
+                    print("🔧 Background mode: keeping location updates active")
+                    // Keep running for background notifications
+                } else {
+                    print("🔧 Foreground only: switching to timer-based updates")
+                    self.locationManager.stopUpdatingLocation()
+                }
             }
         }
     }
@@ -483,8 +496,13 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             self?.authorizationStatus = manager.authorizationStatus
             print("🔧 Authorization changed to: \(manager.authorizationStatus.rawValue)")
 
-            if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
-                print("🔧 Permission granted - starting tracking")
+            if manager.authorizationStatus == .authorizedWhenInUse {
+                print("🔧 When In Use granted - requesting Always for background updates")
+                // Request upgrade to Always for background location
+                manager.requestAlwaysAuthorization()
+                self?.startTracking()
+            } else if manager.authorizationStatus == .authorizedAlways {
+                print("🔧 Always permission granted - starting background tracking")
                 self?.startTracking()
             }
         }

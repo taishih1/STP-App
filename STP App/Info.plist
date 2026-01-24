@@ -5,8 +5,12 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>STP App needs your location to show your position on the route map, find nearby checkpoints, and track your progress along the Seattle to Portland ride.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>STP App needs your location to show your position on the route map, find nearby checkpoints, and track your progress along the Seattle to Portland ride.</string>
+	<string>STP App needs continuous location access to alert you when approaching checkpoints, even when your phone is locked during the ride.</string>
 	<key>NSLocationUsageDescription</key>
 	<string>STP App needs your location to show your position on the route map, find nearby checkpoints, and track your progress along the Seattle to Portland ride.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 </dict>
 </plist>
