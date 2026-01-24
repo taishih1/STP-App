@@ -338,6 +338,7 @@ class NotificationManager: ObservableObject {
         content.title = "Checkpoint Ahead!"
         content.body = "\(checkpoint.name) is \(UserProfileManager.shared.formatDistance(distance)) away"
         content.sound = .default
+        content.userInfo = ["checkpointId": checkpoint.id.uuidString]
 
         let request = UNNotificationRequest(
             identifier: "checkpoint-\(checkpoint.id)",
@@ -503,6 +504,7 @@ struct ContentView: View {
     @StateObject private var userProfile = UserProfileManager.shared
     @StateObject private var locationManager = LocationManager()
     @State private var hasRequestedPermission = false
+    @State private var notificationCheckpoint: STPCheckpoint? = nil
 
     var body: some View {
         Group {
@@ -515,6 +517,16 @@ struct ContentView: View {
         .environmentObject(userProfile)
         .environmentObject(locationManager)
         .preferredColorScheme(userProfile.darkMode ? .dark : nil)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenCheckpoint"))) { notification in
+            if let checkpointId = notification.userInfo?["checkpointId"] as? String,
+               let uuid = UUID(uuidString: checkpointId),
+               let checkpoint = stpCheckpoints.first(where: { $0.id == uuid }) {
+                notificationCheckpoint = checkpoint
+            }
+        }
+        .sheet(item: $notificationCheckpoint) { checkpoint in
+            CheckpointDetailView(checkpoint: checkpoint)
+        }
     }
 }
 

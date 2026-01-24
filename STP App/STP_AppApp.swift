@@ -1,8 +1,41 @@
 import SwiftUI
 import AVKit
+import UserNotifications
+
+// MARK: - App Delegate for Notification Handling
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    // Handle notification tap when app is in foreground
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Show notification even when app is in foreground
+        completionHandler([.banner, .sound])
+    }
+
+    // Handle notification tap
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        let userInfo = response.notification.request.content.userInfo
+
+        if let checkpointId = userInfo["checkpointId"] as? String {
+            print("📍 Notification tapped for checkpoint: \(checkpointId)")
+            // Post notification to open checkpoint
+            NotificationCenter.default.post(
+                name: NSNotification.Name("OpenCheckpoint"),
+                object: nil,
+                userInfo: ["checkpointId": checkpointId]
+            )
+        }
+
+        completionHandler()
+    }
+}
 
 @main
 struct STP_AppApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var showLaunchScreen = true
 
     var body: some Scene {
