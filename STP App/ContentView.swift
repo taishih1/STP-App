@@ -357,28 +357,6 @@ class NotificationManager: ObservableObject {
     func resetNotifications() {
         notifiedCheckpoints.removeAll()
     }
-
-    // TEST: Send a test notification
-    func sendTestNotification() {
-        let content = UNMutableNotificationContent()
-        content.title = "Checkpoint Ahead!"
-        content.body = "Spanaway Middle School is 0.8 mi away"
-        content.sound = .default
-
-        let request = UNNotificationRequest(
-            identifier: "test-notification",
-            content: content,
-            trigger: nil
-        )
-
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("❌ Test notification error: \(error)")
-            } else {
-                print("✅ Test notification sent!")
-            }
-        }
-    }
 }
 
 // MARK: - Location Manager
@@ -750,12 +728,6 @@ struct MainAppView: View {
             // Request notification permission if alerts are enabled
             if UserProfileManager.shared.checkpointAlerts {
                 NotificationManager.shared.requestPermission()
-            }
-
-            // TEST: Send test notification after 3 seconds
-            NotificationManager.shared.requestPermission()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                NotificationManager.shared.sendTestNotification()
             }
 
             // Start tracking immediately if permission already granted
